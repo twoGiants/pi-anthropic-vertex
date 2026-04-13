@@ -1,0 +1,27 @@
+{
+  "name": "pi-anthropic-vertex",
+  "version": "0.1.0",
+  "description": "Anthropic Claude models on Google Cloud Vertex AI for pi",
+  "type": "module",
+  "main": "index.ts",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "@anthropic-ai/vertex-sdk": "~0.14.4"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "anthropic",
+    "vertex-ai",
+    "claude"
+  ],
+  "license": "MIT"
+}
