@@ -26,7 +26,7 @@ Our extension                          Pi built-in
 
 ### Why this approach
 
-- **~80–100 lines** instead of 500+ in other extensions
+- **~160 lines** instead of 500+ in other extensions
 - **Full feature parity** with pi's built-in Anthropic provider:
   - `transformMessages` — adjacency enforcement, orphaned tool result handling,
     errored/aborted message filtering, tool call ID normalization, cross-provider
@@ -62,19 +62,24 @@ Our extension                          Pi built-in
    automatically picks up new models.
 
 5. **AnthropicVertex client**: The `@anthropic-ai/vertex-sdk` `AnthropicVertex`
-   class extends `Anthropic` from `@anthropic-ai/sdk`. It handles Google ADC
-   auth and Vertex URL construction internally. The built-in `streamAnthropic`
-   accepts a `client?: Anthropic` option — so `AnthropicVertex` can be passed
-   directly with no casting needed.
+   class extends `BaseAnthropic` from `@anthropic-ai/sdk` (not `Anthropic`).
+   It handles Google ADC auth and Vertex URL construction internally. The
+   built-in `streamAnthropic` accepts a `client?: Anthropic` option — since
+   `AnthropicVertex` omits `completions` and `models` (which don't exist on
+   Vertex AI), a cast through `unknown` is needed. `@anthropic-ai/sdk` is
+   pinned to pi's version (0.73.0) to avoid structural type mismatches.
 
 6. **Beta headers**: Set on the `AnthropicVertex` client constructor since the
-   built-in `createClient` is skipped when `client` is injected. Required:
+   built-in `createClient` is skipped when `client` is injected. Both
    `fine-grained-tool-streaming-2025-05-14` and `interleaved-thinking-2025-05-14`
-   (the latter only for non-4.6 models; 4.6 has interleaved thinking built-in).
+   are always included — the latter is a no-op on adaptive models (4.6+) and
+   enables interleaved reasoning on older models.
 
-7. **Thinking mapping**: Our `streamSimple` receives `SimpleStreamOptions` (with
-   `reasoning: "minimal"|"low"|"medium"|"high"|"xhigh"`). We must convert to
-   `AnthropicOptions`:
+7. **Thinking mapping**: We bypass `streamSimpleAnthropic` (which creates its
+   own client) and call `stream()` directly with our injected client. This
+   means we must replicate the `SimpleStreamOptions` → `AnthropicOptions`
+   thinking mapping. The mirrored functions are kept in sync via versioned
+   GitHub links in the source comments. The mapping converts:
    - Opus 4.6 / Sonnet 4.6: `{ thinkingEnabled: true, effort: "low"|"medium"|"high"|"max" }`
      (adaptive thinking)
    - Older models: `{ thinkingEnabled: true, thinkingBudgetTokens: N }` with
@@ -85,14 +90,17 @@ Our extension                          Pi built-in
 ```
 ~/.pi/agent/extensions/anthropic-vertex/
 ├── PLAN.md         # This file
-├── index.ts        # Extension entry point (~80-100 lines)
-└── package.json    # Dependencies: @anthropic-ai/vertex-sdk
+├── README.md       # Package documentation
+├── LICENSE         # MIT
+├── index.ts        # Extension entry point (~160 lines)
+└── package.json    # @twogiants/pi-anthropic-vertex
 ```
 
 ## Phase 1: Build as global extension
 
 ### Step 1: Create package.json
 
+- `@anthropic-ai/sdk` pinned to pi's version (0.73.0) for type compatibility
 - `@anthropic-ai/vertex-sdk` as dependency
 - `"pi": { "extensions": ["./index.ts"] }` for pi discovery
 - Peer dependencies on `@mariozechner/pi-ai` and `@mariozechner/pi-coding-agent`
@@ -112,10 +120,10 @@ Our extension                          Pi built-in
    - `api`: `"anthropic-vertex"`
    - `models`: the mapped model list
    - `streamSimple`: function that:
-     a. Creates `AnthropicVertex` client with project, region, beta headers
-     b. Maps `SimpleStreamOptions.reasoning` to `AnthropicOptions` (adaptive vs budget)
-     c. Calls `getApiProvider("anthropic-messages").stream()` with
-        `{ ...model, api: "anthropic-messages" }` and `{ client, ...options }`
+     a. Injects pre-built `AnthropicVertex` client (created once at extension load)
+     b. Maps `SimpleStreamOptions` to `AnthropicOptions` via `mapStreamToAnthropicOptions()`
+     c. Patches `model.api` to `"anthropic-messages"` to pass registry type guard
+     d. Delegates to `getApiProvider("anthropic-messages").stream()`
 
 ### Step 3: Install dependencies
 
@@ -141,10 +149,10 @@ Test scenarios:
 
 ## Phase 2: Publish to npm
 
-1. Add `README.md` with setup instructions
-2. Set package name (e.g., `@sjakusch/pi-anthropic-vertex`)
-3. `npm publish`
-4. Users install with `pi install npm:@sjakusch/pi-anthropic-vertex`
+1. ✅ Add `README.md` with setup instructions
+2. ✅ Set package name: `@twogiants/pi-anthropic-vertex`
+3. `npm publish --access public`
+4. Users install with `pi install npm:@twogiants/pi-anthropic-vertex`
 
 ## Phase 3: Comment on GitHub issue #1155
 
@@ -164,4 +172,4 @@ This plan was informed by analysis of four existing extensions:
 | Colleague's fork (git.sbr.pm) | ~500 | Fork of isaacraja + control char fix | Same weaknesses as isaacraja minus control chars |
 | `ssweens/pi-vertex` | ~1500 | Multi-model (Gemini+Claude+MaaS) | No prompt caching, no beta headers, no partial-json |
 | `basnijholt/pi-anthropic-vertex` | ~550 | Best standalone Claude-only | No adjacency enforcement, no tool ID sanitization |
-| **This extension** | ~80–100 | Delegates to built-in | None — inherits all built-in features |
+| **This extension** | ~160 | Delegates to built-in | None — inherits all built-in features |
