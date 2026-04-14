@@ -1,9 +1,18 @@
 {
   "name": "@twogiants/pi-anthropic-vertex",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Anthropic Claude models on Google Cloud Vertex AI for pi",
   "type": "module",
   "main": "index.ts",
+  "author": "Stanislav Jakuschevskij",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/twoGiants/pi-anthropic-vertex.git"
+  },
+  "homepage": "https://github.com/twoGiants/pi-anthropic-vertex#readme",
+  "bugs": {
+    "url": "https://github.com/twoGiants/pi-anthropic-vertex/issues"
+  },
   "pi": {
     "extensions": [
       "./index.ts"

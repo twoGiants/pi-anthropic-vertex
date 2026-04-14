@@ -22,6 +22,12 @@ Model definitions are pulled at runtime from pi's built-in Anthropic provider vi
 pi install npm:@twogiants/pi-anthropic-vertex
 ```
 
+Or install from git:
+
+```bash
+pi install git:github.com/twoGiants/pi-anthropic-vertex
+```
+
 ## Setup
 
 Authenticate with Google Cloud:
