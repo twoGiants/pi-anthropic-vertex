@@ -1,9 +1,24 @@
 /**
  * pi-anthropic-vertex — Anthropic Claude models on Google Cloud Vertex AI
  *
- * Reuses pi's built-in anthropic-messages streaming implementation via client
- * injection. All message transformation, caching, streaming, and error handling
- * is handled by pi's battle-tested internals.
+ * Pi's built-in "anthropic-messages" provider handles all the hard parts: message
+ * transformation, prompt caching, tool call normalization, thinking block replay,
+ * partial JSON streaming, and usage tracking. We reuse this by injecting our own
+ * AnthropicVertex client via the `client` option of streamAnthropic().
+ *
+ * The API registry exposes two levels for each provider:
+ *   - streamSimple(model, context, SimpleStreamOptions) is high-level. Resolves the
+ *     API key, creates an Anthropic client, maps SimpleStreamOptions to AnthropicOptions,
+ *     then calls stream(). We cannot use this because it always creates a plain Anthropic
+ *     client from an API key, ignoring any injected client.
+ *   - stream(model, context, AnthropicOptions) is low-level. Accepts a pre-built client
+ *     and fully-mapped AnthropicOptions. This is what we call, injecting AnthropicVertex.
+ *
+ * By bypassing streamSimple, we must replicate the SimpleStreamOptions → AnthropicOptions
+ * mapping it would have done. That mapping lives in streamSimpleAnthropic() and its helpers,
+ * which are internal to pi and not exported. We mirror them verbatim and keep them in sync
+ * via the links in the comments below. Everything else (streaming, caching, error handling)
+ * is handled by pi's stream() call.
  *
  * Prerequisites:
  *   1. gcloud auth application-default login
@@ -24,6 +39,7 @@ import {
 	type Model,
 	type SimpleStreamOptions,
 	type ThinkingBudgets,
+	type ThinkingLevel,
 } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
@@ -73,6 +89,10 @@ export default function (pi: ExtensionAPI) {
 		models,
 		streamSimple: (model: Model<Api>, context, options?: SimpleStreamOptions) => {
 			const anthropicOptions = mapStreamToAnthropicOptions(client, options, model);
+			// The registry's wrapStream() guard rejects any model whose api field
+			// doesn't match the registered api. Our models are registered as
+			// "anthropic-vertex" but we're calling the "anthropic-messages" provider,
+			// so we patch the api field to pass the guard.
 			const patchedModel = { ...model, api: "anthropic-messages" as Api };
 			return anthropicApi.stream(patchedModel, context, anthropicOptions);
 		},
@@ -105,16 +125,21 @@ function mapStreamToAnthropicOptions(
 		...buildThinkingOptions()
 	};
 
+	// We can't call streamSimpleAnthropic() because it creates its own Anthropic
+	// client internally, ignoring our injected AnthropicVertex client. Instead we
+	// call stream() directly and replicate the thinking mapping from streamSimpleAnthropic()
+	// here. Keep in sync with:
+	// https://github.com/badlogic/pi-mono/blob/v0.67.1/packages/ai/src/providers/anthropic.ts#L477
 	function buildThinkingOptions(): {
 		thinkingEnabled: boolean; effort?: AnthropicOptions["effort"];
 		thinkingBudgetTokens?: number; maxTokens?: number;
 	} {
 		if (!options?.reasoning || !model.reasoning) return { thinkingEnabled: false };
 
-		if (usesAdaptiveThinking(model.id)) return { thinkingEnabled: true, effort: mapEffort(options.reasoning, model.id) };
+		if (supportsAdaptiveThinking(model.id)) return { thinkingEnabled: true, effort: mapThinkingLevelToEffort(options.reasoning, model.id) };
 
 		const baseMaxTokens = options.maxTokens || Math.min(model.maxTokens, 32000);
-		const adjusted = adjustForThinkingBudget(baseMaxTokens, model.maxTokens, options.reasoning, options.thinkingBudgets);
+		const adjusted = adjustMaxTokensForThinking(baseMaxTokens, model.maxTokens, options.reasoning, options.thinkingBudgets);
 
 		return {
 			thinkingEnabled: true,
@@ -123,23 +148,21 @@ function mapStreamToAnthropicOptions(
 		};
 	}
 
-	/**
-	 * Check if a model uses adaptive thinking (Opus 4.6, Sonnet 4.6).
-	 * Older models use budget-based thinking instead.
-	 */
-	function usesAdaptiveThinking(modelId: string): boolean {
-		return modelId.includes("opus-4-6")
-			|| modelId.includes("opus-4.6")
-			|| modelId.includes("sonnet-4-6")
-			|| modelId.includes("sonnet-4.6");
+	// Keep in sync with: https://github.com/badlogic/pi-mono/blob/v0.67.1/packages/ai/src/providers/anthropic.ts#L446
+	function supportsAdaptiveThinking(modelId: string): boolean {
+		return (
+			modelId.includes("opus-4-6") ||
+			modelId.includes("opus-4.6") ||
+			modelId.includes("sonnet-4-6") ||
+			modelId.includes("sonnet-4.6")
+		);
 	}
 
-	/**
-	 * Map pi's thinking level to Anthropic's effort level for adaptive thinking.
-	 */
-	function mapEffort(level: string, modelId: string): "low" | "medium" | "high" | "max" {
+	// Keep in sync with: https://github.com/badlogic/pi-mono/blob/v0.67.1/packages/ai/src/providers/anthropic.ts#L460
+	function mapThinkingLevelToEffort(level: SimpleStreamOptions["reasoning"], modelId: string): AnthropicOptions["effort"] {
 		switch (level) {
 			case "minimal":
+				return "low";
 			case "low":
 				return "low";
 			case "medium":
@@ -147,35 +170,35 @@ function mapStreamToAnthropicOptions(
 			case "high":
 				return "high";
 			case "xhigh":
-				return (modelId.includes("opus-4-6") || modelId.includes("opus-4.6")) ? "max" : "high";
+				return modelId.includes("opus-4-6") || modelId.includes("opus-4.6") ? "max" : "high";
 			default:
 				return "high";
 		}
 	}
 
-	/**
-	 * Adjust maxTokens to accommodate thinking budget for older (non-adaptive) models.
-	 */
-	function adjustForThinkingBudget(
+	// Keep in sync with: https://github.com/badlogic/pi-mono/blob/v0.67.1/packages/ai/src/providers/simple-options.ts#L22
+	function adjustMaxTokensForThinking(
 		baseMaxTokens: number,
 		modelMaxTokens: number,
-		reasoning: string,
+		reasoningLevel: ThinkingLevel,
 		customBudgets?: ThinkingBudgets,
 	): { maxTokens: number; thinkingBudget: number } {
-		const defaults: Record<string, number> = {
+		const defaultBudgets: ThinkingBudgets = {
 			minimal: 1024,
 			low: 2048,
 			medium: 8192,
 			high: 16384,
 		};
-		const level = (reasoning === "xhigh" ? "high" : reasoning) as keyof ThinkingBudgets;
-		const thinkingBudget = customBudgets?.[level] ?? defaults[level] ?? 8192;
+		const budgets = { ...defaultBudgets, ...customBudgets };
+		const minOutputTokens = 1024;
+		const level = (reasoningLevel === "xhigh" ? "high" : reasoningLevel) as keyof ThinkingBudgets;
+		let thinkingBudget = budgets[level]!;
 		const maxTokens = Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
-		const minOutput = 1024;
 
-		return {
-			maxTokens,
-			thinkingBudget: maxTokens <= thinkingBudget ? Math.max(0, maxTokens - minOutput) : thinkingBudget,
-		};
+		if (maxTokens <= thinkingBudget) {
+			thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
+		}
+
+		return { maxTokens, thinkingBudget };
 	}
 }
