@@ -153,9 +153,9 @@ Test scenarios:
 1. ✅ Add `README.md` with setup instructions
 2. ✅ Set package name: `@twogiants/pi-anthropic-vertex`
 3. ✅ Publish `0.1.0` — first official numbered release
-4. Add release pipeline — GitHub Actions on tag push → npm publish
-5. Fix + publish `0.1.1` — remove deprecated header, sync helpers, update links
-6. Add sync monitoring — daily check, diff against pinned pi source, fail + open GitHub issue
+4. ✅ Release pipeline — GitHub Actions on tag push: npm publish + GitHub Release
+5. ✅ Fix + publish `0.1.2` — remove deprecated header, sync helpers with pi v0.70.2
+6. ✅ Sync monitoring — daily check, diff against pinned pi source, fail + open GitHub issue
 7. Users install with `pi install npm:@twogiants/pi-anthropic-vertex`
 
 ## Phase 3: Comment on GitHub issue #1155

@@ -1,0 +1,157 @@
+name: Sync Check
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # daily at 08:00 UTC
+  workflow_dispatch: # allow manual trigger
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed to auto-commit PI_VERSION
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Skip if sync issue already open
+        id: skip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh issue list --state open --search "Sync: PI updated in:title" --json number -q '.[0].number' || true)
+          if [ -n "$EXISTING" ]; then
+            echo "Sync issue #$EXISTING already open. Skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v6
+        if: steps.skip.outputs.skip == 'false'
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Check for pi updates
+        if: steps.skip.outputs.skip == 'false'
+        id: check
+        run: |
+          PINNED=$(cat sync/PI_VERSION)
+          LATEST=$(npm show @mariozechner/pi-coding-agent version)
+          echo "pinned=$PINNED" >> "$GITHUB_OUTPUT"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+
+          if [ "$PINNED" = "$LATEST" ]; then
+            echo "Pi version unchanged ($PINNED). Nothing to do."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Pi updated: $PINNED -> $LATEST"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+          # Download the latest pi-ai package and extract reference files
+          mkdir -p /tmp/pi-latest
+          npm pack @mariozechner/pi-ai@"$LATEST" --pack-destination /tmp/pi-latest
+          tar -xzf /tmp/pi-latest/*.tgz -C /tmp/pi-latest
+
+          LATEST_ANTHROPIC="/tmp/pi-latest/package/dist/providers/anthropic.js"
+          LATEST_SIMPLE="/tmp/pi-latest/package/dist/providers/simple-options.js"
+
+          # Fail if expected files are missing (renamed or restructured)
+          MISSING=false
+          if [ ! -f "$LATEST_ANTHROPIC" ]; then
+            echo "::error::anthropic.js not found in @mariozechner/pi-ai@$LATEST. File may have been renamed or removed."
+            MISSING=true
+          fi
+          if [ ! -f "$LATEST_SIMPLE" ]; then
+            echo "::error::simple-options.js not found in @mariozechner/pi-ai@$LATEST. File may have been renamed or removed."
+            MISSING=true
+          fi
+          if [ "$MISSING" = "true" ]; then
+            echo "has_diff=missing" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          # Generate diffs against pinned reference copies
+          HAS_DIFF=false
+
+          {
+            ANTHROPIC_DIFF=$(diff -u sync/anthropic.js "$LATEST_ANTHROPIC" || true)
+            if [ -n "$ANTHROPIC_DIFF" ]; then
+              HAS_DIFF=true
+              echo "### anthropic.js"
+              echo ""
+              echo '```diff'
+              echo "$ANTHROPIC_DIFF"
+              echo '```'
+              echo ""
+            fi
+
+            SIMPLE_DIFF=$(diff -u sync/simple-options.js "$LATEST_SIMPLE" || true)
+            if [ -n "$SIMPLE_DIFF" ]; then
+              HAS_DIFF=true
+              echo "### simple-options.js"
+              echo ""
+              echo '```diff'
+              echo "$SIMPLE_DIFF"
+              echo '```'
+            fi
+          } > /tmp/pi-diff.md
+
+          echo "has_diff=$HAS_DIFF" >> "$GITHUB_OUTPUT"
+
+          if [ "$HAS_DIFF" = "false" ]; then
+            echo "Pi version changed ($PINNED -> $LATEST) but no relevant file diffs."
+          fi
+
+      - name: Auto-update PI_VERSION when no diffs
+        if: steps.check.outputs.changed == 'true' && steps.check.outputs.has_diff == 'false'
+        run: |
+          echo "${{ steps.check.outputs.latest }}" > sync/PI_VERSION
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add sync/PI_VERSION
+          git commit -m "chore: no diff, bump PI_VERSION to ${{ steps.check.outputs.latest }}"
+          git push
+
+      - name: Create GitHub issue
+        if: steps.check.outputs.has_diff == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PINNED=${{ steps.check.outputs.pinned }}
+          LATEST=${{ steps.check.outputs.latest }}
+          TITLE="Sync: PI updated $PINNED -> $LATEST"
+
+          {
+            echo "Pi updated from \`$PINNED\` to [\`$LATEST\`](https://github.com/badlogic/pi-mono/releases/tag/v$LATEST)."
+            echo ""
+            echo "The following files that we mirror have changed. Review the diffs and check if our mirrored functions need updating:"
+            echo ""
+            echo "- \`supportsAdaptiveThinking\`: which models use adaptive vs budget-based thinking"
+            echo "- \`mapThinkingLevelToEffort\`: maps pi thinking levels to Anthropic effort values"
+            echo "- \`adjustMaxTokensForThinking\`: adjusts maxTokens to fit thinking budget for older models"
+            echo "- \`buildBaseOptions\`: maps SimpleStreamOptions to StreamOptions (mirrored in \`mapStreamToAnthropicOptions\`)"
+            echo "- Beta header logic in \`createClient\`: which headers to send on the AnthropicVertex client"
+            echo ""
+            cat /tmp/pi-diff.md
+            echo ""
+            echo "### After syncing"
+            echo ""
+            echo "Update the pinned references to stop this workflow from re-triggering:"
+            echo ""
+            echo '```bash'
+            echo "./sync/update.sh $LATEST"
+            echo '```'
+          } > /tmp/issue-body.md
+
+          gh issue create --title "$TITLE" --body-file /tmp/issue-body.md
+
+      - name: Fail if sync needed
+        if: steps.check.outputs.has_diff == 'true'
+        run: |
+          echo "::error::Pi updated from ${{ steps.check.outputs.pinned }} to ${{ steps.check.outputs.latest }} with relevant changes. See the GitHub issue for details."
+          exit 1
