@@ -30,7 +30,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
+import { AnthropicVertex, ClientOptions } from "@anthropic-ai/vertex-sdk";
 import {
 	getApiProvider,
 	getModels,
@@ -69,25 +69,23 @@ export default function (pi: ExtensionAPI) {
 			maxTokens,
 		}));
 
-	// Created once. Reusing avoids re-reading credentials on every stream call.
-	const client = new AnthropicVertex({
-		projectId: project,
-		region,
-		defaultHeaders: {
-			"anthropic-beta": [
-				"fine-grained-tool-streaming-2025-05-14",
-				// We always include interleaved-thinking: it's a no-op on adaptive models
-				"interleaved-thinking-2025-05-14",
-			].join(","),
-		},
-	});
-
 	pi.registerProvider("anthropic-vertex", {
 		baseUrl: `https://${region}-aiplatform.googleapis.com`,
 		apiKey: "GOOGLE_CLOUD_PROJECT",
 		api: "anthropic-vertex",
 		models,
 		streamSimple: (model: Model<Api>, context, options?: SimpleStreamOptions) => {
+			// Client is created per-call so we can conditionally include
+			// interleaved-thinking-2025-05-14 only for non-adaptive models.
+			// Adaptive models (4.6+) have interleaved thinking built-in and
+			// reject the header. fine-grained-tool-streaming-2025-05-14 was
+			// deprecated in pi v0.68.1 (replaced by per-tool eager_input_streaming)
+			// and is rejected by Vertex — omitted entirely.
+			const clientOptions: ClientOptions = { projectId: project, region };
+			if (!supportsAdaptiveThinking(model.id))
+				clientOptions.defaultHeaders = { "anthropic-beta": "interleaved-thinking-2025-05-14" };
+			const client = new AnthropicVertex(clientOptions);
+
 			const anthropicOptions = mapStreamToAnthropicOptions(client, options, model);
 			// The registry's wrapStream() guard rejects any model whose api field
 			// doesn't match the registered api. Our models are registered as
@@ -97,6 +95,18 @@ export default function (pi: ExtensionAPI) {
 			return anthropicApi.stream(patchedModel, context, anthropicOptions);
 		},
 	});
+}
+
+// Keep in sync with: https://github.com/badlogic/pi-mono/blob/v0.70.2/packages/ai/src/providers/anthropic.ts#L446
+function supportsAdaptiveThinking(modelId: string): boolean {
+	return (
+		modelId.includes("opus-4-6") ||
+		modelId.includes("opus-4.6") ||
+		modelId.includes("opus-4-7") ||
+		modelId.includes("opus-4.7") ||
+		modelId.includes("sonnet-4-6") ||
+		modelId.includes("sonnet-4.6")
+	);
 }
 
 /**
@@ -129,7 +139,7 @@ function mapStreamToAnthropicOptions(
 	// client internally, ignoring our injected AnthropicVertex client. Instead we
 	// call stream() directly and replicate the thinking mapping from streamSimpleAnthropic()
 	// here. Keep in sync with:
-	// https://github.com/badlogic/pi-mono/blob/v0.67.1/packages/ai/src/providers/anthropic.ts#L477
+	// https://github.com/badlogic/pi-mono/blob/v0.70.2/packages/ai/src/providers/anthropic.ts#L477
 	function buildThinkingOptions(): {
 		thinkingEnabled: boolean; effort?: AnthropicOptions["effort"];
 		thinkingBudgetTokens?: number; maxTokens?: number;
@@ -148,17 +158,7 @@ function mapStreamToAnthropicOptions(
 		};
 	}
 
-	// Keep in sync with: https://github.com/badlogic/pi-mono/blob/v0.67.1/packages/ai/src/providers/anthropic.ts#L446
-	function supportsAdaptiveThinking(modelId: string): boolean {
-		return (
-			modelId.includes("opus-4-6") ||
-			modelId.includes("opus-4.6") ||
-			modelId.includes("sonnet-4-6") ||
-			modelId.includes("sonnet-4.6")
-		);
-	}
-
-	// Keep in sync with: https://github.com/badlogic/pi-mono/blob/v0.67.1/packages/ai/src/providers/anthropic.ts#L460
+	// Keep in sync with: https://github.com/badlogic/pi-mono/blob/v0.70.2/packages/ai/src/providers/anthropic.ts#L460
 	function mapThinkingLevelToEffort(level: SimpleStreamOptions["reasoning"], modelId: string): AnthropicOptions["effort"] {
 		switch (level) {
 			case "minimal":
@@ -170,13 +170,15 @@ function mapStreamToAnthropicOptions(
 			case "high":
 				return "high";
 			case "xhigh":
-				return modelId.includes("opus-4-6") || modelId.includes("opus-4.6") ? "max" : "high";
+				if (modelId.includes("opus-4-6") || modelId.includes("opus-4.6")) return "max";
+				if (modelId.includes("opus-4-7") || modelId.includes("opus-4.7")) return "xhigh";
+				return "high";
 			default:
 				return "high";
 		}
 	}
 
-	// Keep in sync with: https://github.com/badlogic/pi-mono/blob/v0.67.1/packages/ai/src/providers/simple-options.ts#L22
+	// Keep in sync with: https://github.com/badlogic/pi-mono/blob/v0.70.2/packages/ai/src/providers/simple-options.ts#L22
 	function adjustMaxTokensForThinking(
 		baseMaxTokens: number,
 		modelMaxTokens: number,
