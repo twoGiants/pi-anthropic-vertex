@@ -69,19 +69,20 @@ Our extension                          Pi built-in
    Vertex AI), a cast through `unknown` is needed. `@anthropic-ai/sdk` is
    pinned to pi's version (0.73.0) to avoid structural type mismatches.
 
-6. **Beta headers**: Set on the `AnthropicVertex` client constructor since the
-   built-in `createClient` is skipped when `client` is injected. Both
-   `fine-grained-tool-streaming-2025-05-14` and `interleaved-thinking-2025-05-14`
-   are always included — the latter is a no-op on adaptive models (4.6+) and
-   enables interleaved reasoning on older models.
+6. **Beta headers**: `fine-grained-tool-streaming-2025-05-14` was deprecated in
+   pi v0.68.1 and replaced with per-tool `eager_input_streaming: true` in tool
+   definitions. Vertex rejects the old header. Only `interleaved-thinking-2025-05-14`
+   is sent, and only for non-adaptive models (4.6+ have it built-in). Because the
+   header depends on the model, the `AnthropicVertex` client is created per-call
+   inside `streamSimple` rather than once at startup.
 
 7. **Thinking mapping**: We bypass `streamSimpleAnthropic` (which creates its
    own client) and call `stream()` directly with our injected client. This
    means we must replicate the `SimpleStreamOptions` → `AnthropicOptions`
    thinking mapping. The mirrored functions are kept in sync via versioned
    GitHub links in the source comments. The mapping converts:
-   - Opus 4.6 / Sonnet 4.6: `{ thinkingEnabled: true, effort: "low"|"medium"|"high"|"max" }`
-     (adaptive thinking)
+   - Opus 4.6 / Sonnet 4.6: adaptive thinking with `effort: "low"|"medium"|"high"|"max"`
+   - Opus 4.7: adaptive thinking with `effort: "low"|"medium"|"high"|"xhigh"`
    - Older models: `{ thinkingEnabled: true, thinkingBudgetTokens: N }` with
      `maxTokens` adjusted to fit budget + output (budget-based thinking)
 
@@ -151,8 +152,11 @@ Test scenarios:
 
 1. ✅ Add `README.md` with setup instructions
 2. ✅ Set package name: `@twogiants/pi-anthropic-vertex`
-3. `npm publish --access public`
-4. Users install with `pi install npm:@twogiants/pi-anthropic-vertex`
+3. ✅ Publish `0.1.0` — first official numbered release
+4. Add release pipeline — GitHub Actions on tag push → npm publish
+5. Fix + publish `0.1.1` — remove deprecated header, sync helpers, update links
+6. Add sync monitoring — daily check, diff against pinned pi source, fail + open GitHub issue
+7. Users install with `pi install npm:@twogiants/pi-anthropic-vertex`
 
 ## Phase 3: Comment on GitHub issue #1155
 
