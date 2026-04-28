@@ -158,39 +158,6 @@ Test scenarios:
 6. ✅ Sync monitoring — daily check, diff against pinned pi source, fail + open GitHub issue
 7. Users install with `pi install npm:@twogiants/pi-anthropic-vertex`
 
-## Sync review procedure
-
-When the sync-check workflow opens an issue, follow this procedure.
-
-### Mirrored functions to check
-
-- `supportsAdaptiveThinking`: which models use adaptive vs budget-based thinking
-- `mapThinkingLevelToEffort`: maps pi thinking levels to Anthropic effort values
-- `adjustMaxTokensForThinking`: adjusts maxTokens to fit thinking budget for older models
-- `buildBaseOptions`: maps SimpleStreamOptions to StreamOptions (mirrored in `mapStreamToAnthropicOptions`)
-- Beta header logic in `createClient`: which headers to send on the AnthropicVertex client
-
-### Not relevant (no code changes needed)
-
-```bash
-# Update pinned references
-./sync/update.sh <version>
-git add sync/ && git commit -m "chore: bump pinned references to pi <version> (no relevant diffs)" && git push
-# Close the issue
-gh issue close <number> --repo twoGiants/pi-anthropic-vertex --comment "No relevant changes."
-```
-
-### Relevant (code changes needed)
-
-1. Check the pi release notes: `gh release view v<version> --repo badlogic/pi-mono`
-2. Update the mirrored functions in `index.ts`
-3. Update the "keep in sync" links to the new version
-4. Bump `package.json` version (patch for fixes)
-5. Update pinned references: `./sync/update.sh <version>`
-6. Commit and push all changes
-7. Tag and push: `git tag v<new-version> && git push origin v<new-version>` (triggers release pipeline)
-8. Close the issue with a comment explaining what changed
-
 ## Phase 3: Comment on GitHub issue #1155
 
 Leave a comment explaining:
