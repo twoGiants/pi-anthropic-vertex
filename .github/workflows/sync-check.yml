@@ -52,22 +52,21 @@ jobs:
           echo "Pi updated: $PINNED -> $LATEST"
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
-          # Download the latest pi-ai package and extract reference files
+          # Download source files from GitHub at the tagged version
+          BASE_URL="https://raw.githubusercontent.com/badlogic/pi-mono/v${LATEST}/packages/ai/src/providers"
           mkdir -p /tmp/pi-latest
-          npm pack @mariozechner/pi-ai@"$LATEST" --pack-destination /tmp/pi-latest
-          tar -xzf /tmp/pi-latest/*.tgz -C /tmp/pi-latest
 
-          LATEST_ANTHROPIC="/tmp/pi-latest/package/dist/providers/anthropic.js"
-          LATEST_SIMPLE="/tmp/pi-latest/package/dist/providers/simple-options.js"
+          LATEST_ANTHROPIC="/tmp/pi-latest/anthropic.ts"
+          LATEST_SIMPLE="/tmp/pi-latest/simple-options.ts"
 
           # Fail if expected files are missing (renamed or restructured)
           MISSING=false
-          if [ ! -f "$LATEST_ANTHROPIC" ]; then
-            echo "::error::anthropic.js not found in @mariozechner/pi-ai@$LATEST. File may have been renamed or removed."
+          if ! curl -sf "$BASE_URL/anthropic.ts" -o "$LATEST_ANTHROPIC"; then
+            echo "::error::anthropic.ts not found at pi-mono v$LATEST. File may have been renamed or removed."
             MISSING=true
           fi
-          if [ ! -f "$LATEST_SIMPLE" ]; then
-            echo "::error::simple-options.js not found in @mariozechner/pi-ai@$LATEST. File may have been renamed or removed."
+          if ! curl -sf "$BASE_URL/simple-options.ts" -o "$LATEST_SIMPLE"; then
+            echo "::error::simple-options.ts not found at pi-mono v$LATEST. File may have been renamed or removed."
             MISSING=true
           fi
           if [ "$MISSING" = "true" ]; then
@@ -79,10 +78,10 @@ jobs:
           HAS_DIFF=false
 
           {
-            ANTHROPIC_DIFF=$(diff -u sync/anthropic.js "$LATEST_ANTHROPIC" || true)
+            ANTHROPIC_DIFF=$(diff -u sync/anthropic.ts "$LATEST_ANTHROPIC" || true)
             if [ -n "$ANTHROPIC_DIFF" ]; then
               HAS_DIFF=true
-              echo "### anthropic.js"
+              echo "### anthropic.ts"
               echo ""
               echo '```diff'
               echo "$ANTHROPIC_DIFF"
@@ -90,10 +89,10 @@ jobs:
               echo ""
             fi
 
-            SIMPLE_DIFF=$(diff -u sync/simple-options.js "$LATEST_SIMPLE" || true)
+            SIMPLE_DIFF=$(diff -u sync/simple-options.ts "$LATEST_SIMPLE" || true)
             if [ -n "$SIMPLE_DIFF" ]; then
               HAS_DIFF=true
-              echo "### simple-options.js"
+              echo "### simple-options.ts"
               echo ""
               echo '```diff'
               echo "$SIMPLE_DIFF"

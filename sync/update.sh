@@ -7,18 +7,13 @@ set -euo pipefail
 
 VERSION="${1:-$(npm show @mariozechner/pi-coding-agent version)}"
 SYNC_DIR="$(cd "$(dirname "$0")" && pwd)"
-TMP_DIR=$(mktemp -d)
+BASE_URL="https://raw.githubusercontent.com/badlogic/pi-mono/v${VERSION}/packages/ai/src/providers"
 
 echo "Updating pinned references to pi $VERSION..."
 
-npm pack "@mariozechner/pi-ai@$VERSION" --pack-destination "$TMP_DIR"
-tar -xzf "$TMP_DIR"/*.tgz -C "$TMP_DIR"
-
-cp "$TMP_DIR/package/dist/providers/anthropic.js" "$SYNC_DIR/"
-cp "$TMP_DIR/package/dist/providers/simple-options.js" "$SYNC_DIR/"
+curl -sf "$BASE_URL/anthropic.ts" -o "$SYNC_DIR/anthropic.ts"
+curl -sf "$BASE_URL/simple-options.ts" -o "$SYNC_DIR/simple-options.ts"
 echo "$VERSION" > "$SYNC_DIR/PI_VERSION"
-
-rm -rf "$TMP_DIR"
 
 echo "Done. Pinned to pi $VERSION."
 echo "Commit the changes in sync/ to complete the update."
