@@ -16,7 +16,11 @@ cd "$REPO_DIR"
 NEW_VERSION=$(npm version patch --no-git-tag-version | tr -d 'v')
 echo "Bumped to $NEW_VERSION"
 
-# Update pinned references
+# Add new compat entry, then update pinned references (which updates piMax and README).
+# jq can't read and write the same file, so we write to a temp file first.
+jq --arg v "$NEW_VERSION" --arg pi "$VERSION" \
+  '[{"extension": $v, "piMin": $pi, "piMax": $pi}] + .' \
+  "$SCRIPT_DIR/compat.json" > "$SCRIPT_DIR/compat.tmp" && mv "$SCRIPT_DIR/compat.tmp" "$SCRIPT_DIR/compat.json"
 "$SCRIPT_DIR/update.sh" "$VERSION"
 
 # Commit, tag, push

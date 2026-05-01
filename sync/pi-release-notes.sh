@@ -6,6 +6,6 @@ set -euo pipefail
 
 ISSUE="${1:?Usage: ./sync/release-notes.sh <issue-number>}"
 
-VERSION=$(gh issue view "$ISSUE" --repo twoGiants/pi-anthropic-vertex --json title -q .title | grep -oP '-> \K[\d.]+')
+VERSION=$(gh issue view "$ISSUE" --repo twoGiants/pi-anthropic-vertex --json title -q .title | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$')
 
 gh release view "v$VERSION" --repo badlogic/pi-mono
