@@ -20,9 +20,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          EXISTING=$(gh issue list --state open --search "Sync: PI updated in:title" --json number -q '.[0].number' || true)
+          EXISTING=$(gh issue list --state open --search "Sync: PI updated in:title" --json number,url -q '.[0]' || true)
           if [ -n "$EXISTING" ]; then
-            echo "Sync issue #$EXISTING already open. Skipping."
+            NUMBER=$(echo "$EXISTING" | jq -r '.number')
+            URL=$(echo "$EXISTING" | jq -r '.url')
+            echo "::warning::Sync issue #$NUMBER already open: $URL. Skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -117,6 +119,7 @@ jobs:
           git push
 
       - name: Create GitHub issue
+        id: issue
         if: steps.check.outputs.has_diff == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -147,10 +150,10 @@ jobs:
             echo '```'
           } > /tmp/issue-body.md
 
-          gh issue create --title "$TITLE" --body-file /tmp/issue-body.md
+          echo "url=$(gh issue create --title "$TITLE" --body-file /tmp/issue-body.md)" >> "$GITHUB_OUTPUT"
 
       - name: Fail if sync needed
         if: steps.check.outputs.has_diff == 'true'
         run: |
-          echo "::error::Pi updated from ${{ steps.check.outputs.pinned }} to ${{ steps.check.outputs.latest }} with relevant changes. See the GitHub issue for details."
+          echo "::error::Pi updated from ${{ steps.check.outputs.pinned }} to ${{ steps.check.outputs.latest }} with relevant changes. See the ${{ steps.issue.outputs.url }} for details."
           exit 1
