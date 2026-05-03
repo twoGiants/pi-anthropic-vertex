@@ -30,7 +30,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { AnthropicVertex, ClientOptions } from "@anthropic-ai/vertex-sdk";
+import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
 import {
 	getApiProvider,
 	getModels,
@@ -47,7 +47,10 @@ const DEFAULT_REGION = "us-east5";
 
 export default function (pi: ExtensionAPI) {
 	const project = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
-	if (!project) return;
+	if (!project) {
+		console.warn("[pi-anthropic-vertex] disabled: GOOGLE_CLOUD_PROJECT is not set");
+		return;
+	}
 
 	const anthropicApi = getApiProvider("anthropic-messages");
 	if (!anthropicApi) throw new Error("Built-in anthropic-messages provider not found");
@@ -69,23 +72,32 @@ export default function (pi: ExtensionAPI) {
 			maxTokens,
 		}));
 
+	// Reuse a client across calls when no per-request headers are set, to avoid
+	// re-reading credentials on every stream call. Two cached profiles are kept
+	// since adaptive and non-adaptive models need different beta headers. Calls
+	// that supply custom headers get a dedicated client.
+	const sharedClientByProfile = new Map<"adaptive" | "legacy", AnthropicVertex>();
+
+	function getVertexClient(modelId: string, requestHeaders?: Record<string, string>): AnthropicVertex {
+		if (requestHeaders && Object.keys(requestHeaders).length > 0) {
+			return createVertexClient(project, region, modelId, requestHeaders);
+		}
+		const profile: "adaptive" | "legacy" = supportsAdaptiveThinking(modelId) ? "adaptive" : "legacy";
+		let client = sharedClientByProfile.get(profile);
+		if (!client) {
+			client = createVertexClient(project, region, modelId);
+			sharedClientByProfile.set(profile, client);
+		}
+		return client;
+	}
+
 	pi.registerProvider("anthropic-vertex", {
 		baseUrl: `https://${region}-aiplatform.googleapis.com`,
 		apiKey: "GOOGLE_CLOUD_PROJECT",
 		api: "anthropic-vertex",
 		models,
 		streamSimple: (model: Model<Api>, context, options?: SimpleStreamOptions) => {
-			// Client is created per-call so we can conditionally include
-			// interleaved-thinking-2025-05-14 only for non-adaptive models.
-			// Adaptive models (4.6+) have interleaved thinking built-in and
-			// reject the header. fine-grained-tool-streaming-2025-05-14 was
-			// deprecated in pi v0.68.1 (replaced by per-tool eager_input_streaming)
-			// and is rejected by Vertex — omitted entirely.
-			const clientOptions: ClientOptions = { projectId: project, region };
-			if (!supportsAdaptiveThinking(model.id))
-				clientOptions.defaultHeaders = { "anthropic-beta": "interleaved-thinking-2025-05-14" };
-			const client = new AnthropicVertex(clientOptions);
-
+			const client = getVertexClient(model.id, options?.headers);
 			const anthropicOptions = mapStreamToAnthropicOptions(client, options, model);
 			// The registry's wrapStream() guard rejects any model whose api field
 			// doesn't match the registered api. Our models are registered as
@@ -117,22 +129,27 @@ function mapStreamToAnthropicOptions(
 	options: SimpleStreamOptions | undefined,
 	model: Model<Api>,
 ): AnthropicOptions {
+	const baseMaxTokens =
+		options?.maxTokens ?? (model.maxTokens > 0 ? Math.min(model.maxTokens, 32000) : undefined);
+
 	return {
 		// AnthropicVertex extends BaseAnthropic, as Anthropic does, but it has no
 		// completions or models endpoints. A direct cast is not possible. TypeScript
 		// requires "unknown" as intermediate when types don't overlap. Currently safe
 		// because pi's internal streamAnthropic only calls "messages.stream()".
 		client: client as unknown as Anthropic,
-		maxTokens: options?.maxTokens || Math.min(model.maxTokens, 32000),
+		maxTokens: baseMaxTokens,
 		temperature: options?.temperature,
 		signal: options?.signal,
+		apiKey: options?.apiKey,
 		cacheRetention: options?.cacheRetention,
 		sessionId: options?.sessionId,
 		headers: options?.headers,
 		onPayload: options?.onPayload,
+		onResponse: options?.onResponse,
 		maxRetryDelayMs: options?.maxRetryDelayMs,
 		metadata: options?.metadata,
-		...buildThinkingOptions()
+		...buildThinkingOptions(baseMaxTokens)
 	};
 
 	// We can't call streamSimpleAnthropic() because it creates its own Anthropic
@@ -140,7 +157,7 @@ function mapStreamToAnthropicOptions(
 	// call stream() directly and replicate the thinking mapping from streamSimpleAnthropic()
 	// here. Keep in sync with:
 	// https://github.com/badlogic/pi-mono/blob/v0.70.2/packages/ai/src/providers/anthropic.ts#L477
-	function buildThinkingOptions(): {
+	function buildThinkingOptions(maxTokens: number | undefined): {
 		thinkingEnabled: boolean; effort?: AnthropicOptions["effort"];
 		thinkingBudgetTokens?: number; maxTokens?: number;
 	} {
@@ -148,8 +165,8 @@ function mapStreamToAnthropicOptions(
 
 		if (supportsAdaptiveThinking(model.id)) return { thinkingEnabled: true, effort: mapThinkingLevelToEffort(options.reasoning, model.id) };
 
-		const baseMaxTokens = options.maxTokens || Math.min(model.maxTokens, 32000);
-		const adjusted = adjustMaxTokensForThinking(baseMaxTokens, model.maxTokens, options.reasoning, options.thinkingBudgets);
+		const base = maxTokens ?? model.maxTokens;
+		const adjusted = adjustMaxTokensForThinking(base, model.maxTokens, options.reasoning, options.thinkingBudgets);
 
 		return {
 			thinkingEnabled: true,
@@ -157,50 +174,88 @@ function mapStreamToAnthropicOptions(
 			thinkingBudgetTokens: adjusted.thinkingBudget,
 		};
 	}
+}
 
-	// Keep in sync with: https://github.com/badlogic/pi-mono/blob/v0.70.2/packages/ai/src/providers/anthropic.ts#L460
-	function mapThinkingLevelToEffort(level: SimpleStreamOptions["reasoning"], modelId: string): AnthropicOptions["effort"] {
-		switch (level) {
-			case "minimal":
-				return "low";
-			case "low":
-				return "low";
-			case "medium":
-				return "medium";
-			case "high":
-				return "high";
-			case "xhigh":
-				if (modelId.includes("opus-4-6") || modelId.includes("opus-4.6")) return "max";
-				if (modelId.includes("opus-4-7") || modelId.includes("opus-4.7")) return "xhigh";
-				return "high";
-			default:
-				return "high";
-		}
+// Keep in sync with: https://github.com/badlogic/pi-mono/blob/v0.70.2/packages/ai/src/providers/anthropic.ts#L460
+function mapThinkingLevelToEffort(level: SimpleStreamOptions["reasoning"], modelId: string): AnthropicOptions["effort"] {
+	switch (level) {
+		case "minimal":
+			return "low";
+		case "low":
+			return "low";
+		case "medium":
+			return "medium";
+		case "high":
+			return "high";
+		case "xhigh":
+			if (modelId.includes("opus-4-6") || modelId.includes("opus-4.6")) return "max";
+			if (modelId.includes("opus-4-7") || modelId.includes("opus-4.7")) return "xhigh";
+			return "high";
+		default:
+			return "high";
+	}
+}
+
+// Keep in sync with: https://github.com/badlogic/pi-mono/blob/v0.70.2/packages/ai/src/providers/simple-options.ts#L22
+function adjustMaxTokensForThinking(
+	baseMaxTokens: number,
+	modelMaxTokens: number,
+	reasoningLevel: ThinkingLevel,
+	customBudgets?: ThinkingBudgets,
+): { maxTokens: number; thinkingBudget: number } {
+	const defaultBudgets: ThinkingBudgets = {
+		minimal: 1024,
+		low: 2048,
+		medium: 8192,
+		high: 16384,
+	};
+	const budgets = { ...defaultBudgets, ...customBudgets };
+	const minOutputTokens = 1024;
+	const level = (reasoningLevel === "xhigh" ? "high" : reasoningLevel) as keyof ThinkingBudgets;
+	let thinkingBudget = budgets[level]!;
+	const maxTokens = Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
+
+	if (maxTokens <= thinkingBudget) {
+		thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
 	}
 
-	// Keep in sync with: https://github.com/badlogic/pi-mono/blob/v0.70.2/packages/ai/src/providers/simple-options.ts#L22
-	function adjustMaxTokensForThinking(
-		baseMaxTokens: number,
-		modelMaxTokens: number,
-		reasoningLevel: ThinkingLevel,
-		customBudgets?: ThinkingBudgets,
-	): { maxTokens: number; thinkingBudget: number } {
-		const defaultBudgets: ThinkingBudgets = {
-			minimal: 1024,
-			low: 2048,
-			medium: 8192,
-			high: 16384,
-		};
-		const budgets = { ...defaultBudgets, ...customBudgets };
-		const minOutputTokens = 1024;
-		const level = (reasoningLevel === "xhigh" ? "high" : reasoningLevel) as keyof ThinkingBudgets;
-		let thinkingBudget = budgets[level]!;
-		const maxTokens = Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
+	return { maxTokens, thinkingBudget };
+}
 
-		if (maxTokens <= thinkingBudget) {
-			thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
-		}
-
-		return { maxTokens, thinkingBudget };
+function createVertexClient(
+	projectId: string,
+	region: string,
+	modelId: string,
+	requestHeaders?: Record<string, string>,
+): AnthropicVertex {
+	const betaHeader = buildAnthropicBetaHeader(modelId, requestHeaders?.["anthropic-beta"]);
+	const defaultHeaders: Record<string, string> = { ...requestHeaders };
+	if (betaHeader) {
+		defaultHeaders["anthropic-beta"] = betaHeader;
+	} else {
+		delete defaultHeaders["anthropic-beta"];
 	}
+	return new AnthropicVertex({
+		projectId,
+		region,
+		defaultHeaders: Object.keys(defaultHeaders).length > 0 ? defaultHeaders : undefined,
+	});
+}
+
+// Adaptive models (4.6+) have interleaved thinking built-in and reject the
+// header. fine-grained-tool-streaming-2025-05-14 was deprecated in pi v0.68.1
+// (replaced by per-tool eager_input_streaming) and is rejected by Vertex, so
+// it is omitted entirely.
+function buildAnthropicBetaHeader(modelId: string, userBetaHeader?: string): string {
+	const betas = new Set<string>();
+	if (!supportsAdaptiveThinking(modelId)) {
+		betas.add("interleaved-thinking-2025-05-14");
+	}
+	if (userBetaHeader) {
+		for (const item of userBetaHeader.split(",")) {
+			const value = item.trim();
+			if (value.length > 0) betas.add(value);
+		}
+	}
+	return [...betas].join(",");
 }
