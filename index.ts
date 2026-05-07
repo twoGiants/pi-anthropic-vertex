@@ -62,10 +62,11 @@ export default function (pi: ExtensionAPI) {
 	if (anthropicModels.length === 0) return;
 
 	const models = anthropicModels.map(
-		({ id, name, reasoning, input, cost, contextWindow, maxTokens }) => ({
+		({ id, name, reasoning, thinkingLevelMap, input, cost, contextWindow, maxTokens }) => ({
 			id,
 			name,
 			reasoning,
+			thinkingLevelMap,
 			input,
 			cost,
 			contextWindow,
