@@ -28,7 +28,7 @@ This updates pinned references, commits, pushes, and closes the issue.
 
 Present your analysis and proposed changes, then wait for approval.
 
-After the manual changes to `index.ts` and the "keep in sync" links are done, run:
+After the manual changes to `index.ts` and the "keep in sync" link versions and line numbers are done, run:
 
 ```bash
 ./sync/release.sh <version> $ARGUMENTS "<comment>"

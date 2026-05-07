@@ -13,7 +13,7 @@ cd "$REPO_DIR"
 
 "$SCRIPT_DIR/update.sh" "$VERSION"
 
-git add sync/
+git add -A
 git commit -m "chore: no diff, bump PI_VERSION to $VERSION"
 git push
 
