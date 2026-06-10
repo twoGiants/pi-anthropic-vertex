@@ -155,15 +155,23 @@ function buildThinkingOptions(
   options: SimpleStreamOptions | undefined,
   model: Model<Api>,
 ): {
-  thinkingEnabled: boolean;
+  thinkingEnabled?: boolean;
   effort?: AnthropicOptions["effort"];
   thinkingBudgetTokens?: number;
   maxTokens?: number;
 } {
-  if (!options?.reasoning || !model.reasoning)
-    return { thinkingEnabled: false };
+  const isAdaptive = model.compat?.forceAdaptiveThinking === true;
 
-  if (model.compat?.forceAdaptiveThinking === true)
+  if (!options?.reasoning || !model.reasoning) {
+    // Vertex rejects `thinking: { type: "disabled" }` for adaptive-thinking
+    // models (e.g. claude-fable-5). Omitting thinkingEnabled keeps the
+    // thinking param out of the request, letting Vertex use its adaptive
+    // default. Pi's own streamSimpleAnthropic always sends `false` here,
+    // which works against the direct Anthropic API but not Vertex.
+    return isAdaptive ? {} : { thinkingEnabled: false };
+  }
+
+  if (isAdaptive)
     return {
       thinkingEnabled: true,
       effort: mapThinkingLevelToEffort(model, options.reasoning),
