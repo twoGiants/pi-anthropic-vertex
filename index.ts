@@ -239,6 +239,110 @@ function adjustMaxTokensForThinking(
  * Helpers
  */
 
+// vertex-sdk 0.18.0 defines backendMiddleware() for URL rewriting and Google
+// OAuth, but @anthropic-ai/sdk versions before 0.106.0 never call it. We
+// detect this by checking BaseAnthropic.prototype (grandparent) — if the SDK
+// base class defines backendMiddleware, the SDK calls it and vertex-sdk
+// handles everything natively. If not, we inject equivalent user middleware.
+const DEFAULT_VERSION = "vertex-2023-10-16";
+
+const MESSAGE_ENDPOINTS = new Set(["/v1/messages", "/v1/messages?beta=true"]);
+const COUNT_TOKEN_ENDPOINTS = new Set([
+  "/v1/messages/count_tokens",
+  "/v1/messages/count_tokens?beta=true",
+]);
+
+function hasBackendMiddlewareSupport(client: AnthropicVertex): boolean {
+  // AnthropicVertex extends BaseAnthropic. vertex-sdk 0.18.0 always defines
+  // backendMiddleware() on AnthropicVertex.prototype (one level up). The real
+  // question is whether the SDK's BaseAnthropic (two levels up) also defines
+  // it — that's what tells us the SDK actually calls it in its request pipeline.
+  const baseProto = Object.getPrototypeOf(Object.getPrototypeOf(client));
+  return typeof baseProto?.backendMiddleware === "function";
+}
+
+function createVertexUserMiddleware(client: AnthropicVertex) {
+  const authClientPromise = (client as any)._authClientPromise as Promise<any>;
+  if (!authClientPromise) {
+    throw new Error(
+      "Could not access _authClientPromise on AnthropicVertex client. " +
+        "The vertex-sdk internals may have changed.",
+    );
+  }
+
+  return async (request: any, next: (req: any) => Promise<any>) => {
+    const authClient = await authClientPromise;
+    const authHeaders = await authClient.getRequestHeaders();
+
+    if (!client.projectId) {
+      const resolved =
+        authClient.projectId || authHeaders["x-goog-user-project"];
+      if (resolved) client.projectId = resolved;
+    }
+
+    const url = new URL(request.url);
+
+    let parsedBody: Record<string, any> | undefined;
+    if (typeof request.body === "string") {
+      try {
+        parsedBody = JSON.parse(request.body);
+      } catch {}
+    }
+    if (parsedBody && !parsedBody["anthropic_version"]) {
+      parsedBody["anthropic_version"] = DEFAULT_VERSION;
+    }
+
+    // Rewrite /v1/messages → Vertex rawPredict/streamRawPredict endpoint
+    for (const endpoint of MESSAGE_ENDPOINTS) {
+      const canonicalPath = endpoint.split("?")[0]!;
+      if (url.pathname.endsWith(canonicalPath) && parsedBody) {
+        if (!client.projectId) {
+          throw new Error(
+            "No projectId was given and it could not be resolved from credentials.",
+          );
+        }
+        const model = parsedBody["model"];
+        delete parsedBody["model"];
+        const stream = parsedBody["stream"] ?? false;
+        const specifier = stream ? "streamRawPredict" : "rawPredict";
+        const prefix = url.pathname.slice(
+          0,
+          url.pathname.length - canonicalPath.length,
+        );
+        url.pathname = `${prefix}/projects/${client.projectId}/locations/${client.region}/publishers/anthropic/models/${model}:${specifier}`;
+        url.searchParams.delete("beta");
+        break;
+      }
+    }
+
+    // Rewrite /v1/messages/count_tokens → Vertex count-tokens:rawPredict
+    for (const endpoint of COUNT_TOKEN_ENDPOINTS) {
+      const canonicalPath = endpoint.split("?")[0]!;
+      if (url.pathname.endsWith(canonicalPath)) {
+        if (!client.projectId) {
+          throw new Error(
+            "No projectId was given and it could not be resolved from credentials.",
+          );
+        }
+        const prefix = url.pathname.slice(
+          0,
+          url.pathname.length - canonicalPath.length,
+        );
+        url.pathname = `${prefix}/projects/${client.projectId}/locations/${client.region}/publishers/anthropic/models/count-tokens:rawPredict`;
+        url.searchParams.delete("beta");
+        break;
+      }
+    }
+
+    return next({
+      ...request,
+      url: url.toString(),
+      headers: { ...authHeaders, ...request.headers },
+      ...(parsedBody ? { body: JSON.stringify(parsedBody) } : {}),
+    });
+  };
+}
+
 // Reuse a client across calls when no per-request headers are set, to avoid
 // re-reading credentials on every stream call. Two cached profiles are kept
 // since adaptive and non-adaptive models need different beta headers. Calls
@@ -256,17 +360,26 @@ function createVertexClient(
       isAdaptive,
       requestHeaders,
     );
-    return new AnthropicVertex(opts);
+    const client = new AnthropicVertex(opts);
+    return injectMiddleware(client);
   }
 
   const profile: Profile = isAdaptive ? "adaptive" : "legacy";
   let client = sharedClient.get(profile);
   if (!client) {
     const opts = createVertexClientOpts(project, region, isAdaptive);
-    client = new AnthropicVertex(opts);
+    client = injectMiddleware(new AnthropicVertex(opts));
     sharedClient.set(profile, client);
   }
 
+  return client;
+}
+
+function injectMiddleware(client: AnthropicVertex): AnthropicVertex {
+  if (hasBackendMiddlewareSupport(client)) return client;
+  const arr = (client as any).middleware;
+  if (!Array.isArray(arr)) return client;
+  arr.unshift(createVertexUserMiddleware(client));
   return client;
 }
 
