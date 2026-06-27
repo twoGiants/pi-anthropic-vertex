@@ -17,6 +17,8 @@ import type {
 	ImageContent,
 	Message,
 	Model,
+	ProviderEnv,
+	ProviderHeaders,
 	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
@@ -30,9 +32,9 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.ts";
+import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 
-import { resolveCloudflareBaseUrl } from "./cloudflare.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
 import { adjustMaxTokensForThinking, buildBaseOptions } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
@@ -41,11 +43,11 @@ import { transformMessages } from "./transform-messages.ts";
  * Resolve cache retention preference.
  * Defaults to "short" and uses PI_CACHE_RETENTION for backward compatibility.
  */
-function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
+function resolveCacheRetention(cacheRetention?: CacheRetention, env?: ProviderEnv): CacheRetention {
 	if (cacheRetention) {
 		return cacheRetention;
 	}
-	if (typeof process !== "undefined" && process.env.PI_CACHE_RETENTION === "long") {
+	if (getProviderEnvValue("PI_CACHE_RETENTION", env) === "long") {
 		return "long";
 	}
 	return "short";
@@ -54,8 +56,9 @@ function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention 
 function getCacheControl(
 	model: Model<"anthropic-messages">,
 	cacheRetention?: CacheRetention,
+	env?: ProviderEnv,
 ): { retention: CacheRetention; cacheControl?: CacheControlEphemeral } {
-	const retention = resolveCacheRetention(cacheRetention);
+	const retention = resolveCacheRetention(cacheRetention, env);
 	if (retention === "none") {
 		return { retention };
 	}
@@ -167,16 +170,11 @@ const INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14";
 function getAnthropicCompat(
 	model: Model<"anthropic-messages">,
 ): Required<Omit<AnthropicMessagesCompat, "forceAdaptiveThinking">> {
-	// Auto-detect session affinity and cache control support from provider
-	const isFireworks = model.provider === "fireworks";
-	const isCloudflareAiGatewayAnthropic =
-		model.provider === "cloudflare-ai-gateway" && model.baseUrl.includes("anthropic");
 	return {
-		supportsEagerToolInputStreaming: model.compat?.supportsEagerToolInputStreaming ?? !isFireworks,
-		supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? !isFireworks,
-		sendSessionAffinityHeaders:
-			model.compat?.sendSessionAffinityHeaders ?? !!(isFireworks || isCloudflareAiGatewayAnthropic),
-		supportsCacheControlOnTools: model.compat?.supportsCacheControlOnTools ?? !isFireworks,
+		supportsEagerToolInputStreaming: model.compat?.supportsEagerToolInputStreaming ?? true,
+		supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true,
+		sendSessionAffinityHeaders: model.compat?.sendSessionAffinityHeaders ?? false,
+		supportsCacheControlOnTools: model.compat?.supportsCacheControlOnTools ?? true,
 		supportsTemperature: model.compat?.supportsTemperature ?? true,
 		allowEmptySignature: model.compat?.allowEmptySignature ?? false,
 	};
@@ -187,7 +185,7 @@ export interface AnthropicOptions extends StreamOptions {
 	 * Enable extended thinking.
 	 * For adaptive thinking models: the model decides when/how much to think.
 	 * For older models: uses budget-based thinking with thinkingBudgetTokens.
-	 * Default: undefined (thinking is omitted unless `streamSimpleAnthropic()` maps
+	 * Default: undefined (thinking is omitted unless `streamSimple()` maps
 	 * a simple reasoning level to this option, or callers set it explicitly).
 	 */
 	thinkingEnabled?: boolean;
@@ -206,7 +204,7 @@ export interface AnthropicOptions extends StreamOptions {
 	 * - "medium": Moderate thinking, may skip for simple queries
 	 * - "low": Minimal thinking, skips for simple tasks
 	 * Ignored for older models.
-	 * Default: omitted unless `streamSimpleAnthropic()` maps a simple reasoning
+	 * Default: omitted unless `streamSimple()` maps a simple reasoning
 	 * level to this option.
 	 */
 	effort?: AnthropicEffort;
@@ -244,14 +242,35 @@ export interface AnthropicOptions extends StreamOptions {
 	client?: Anthropic;
 }
 
-function mergeHeaders(...headerSources: (Record<string, string | null> | undefined)[]): Record<string, string | null> {
-	const merged: Record<string, string | null> = {};
+function mergeHeaders(...headerSources: (ProviderHeaders | undefined)[]): ProviderHeaders {
+	const merged: ProviderHeaders = {};
 	for (const headers of headerSources) {
 		if (headers) {
 			Object.assign(merged, headers);
 		}
 	}
 	return merged;
+}
+
+function hasHeader(headers: ProviderHeaders | undefined, name: string): boolean {
+	if (!headers) return false;
+	const expected = name.toLowerCase();
+	for (const [key, value] of Object.entries(headers)) {
+		if (key.toLowerCase() === expected && value !== null && value.trim().length > 0) return true;
+	}
+	return false;
+}
+
+function assertRequestAuth(provider: string, apiKey: string | undefined, headers: ProviderHeaders | undefined): void {
+	if (apiKey) return;
+	if (
+		hasHeader(headers, "authorization") ||
+		hasHeader(headers, "x-api-key") ||
+		hasHeader(headers, "cf-aig-authorization")
+	) {
+		return;
+	}
+	throw new Error(`No API key for provider: ${provider}`);
 }
 
 interface ServerSentEvent {
@@ -446,7 +465,7 @@ async function* iterateAnthropicEvents(
 	}
 }
 
-export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 	model: Model<"anthropic-messages">,
 	context: Context,
 	options?: AnthropicOptions,
@@ -481,9 +500,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 				isOAuth = false;
 			} else {
 				const apiKey = options?.apiKey;
-				if (!apiKey) {
-					throw new Error(`No API key for provider: ${model.provider}`);
-				}
+				assertRequestAuth(model.provider, apiKey, options?.headers);
 
 				let copilotDynamicHeaders: Record<string, string> | undefined;
 				if (model.provider === "github-copilot") {
@@ -494,7 +511,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 					});
 				}
 
-				const cacheRetention = options?.cacheRetention ?? resolveCacheRetention();
+				const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
 				const cacheSessionId = cacheRetention === "none" ? undefined : options?.sessionId;
 
 				const created = createClient(
@@ -739,26 +756,23 @@ function mapThinkingLevelToEffort(
 	}
 }
 
-export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleStreamOptions> = (
+export const streamSimple: StreamFunction<"anthropic-messages", SimpleStreamOptions> = (
 	model: Model<"anthropic-messages">,
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
-	const apiKey = options?.apiKey;
-	if (!apiKey) {
-		throw new Error(`No API key for provider: ${model.provider}`);
-	}
+	assertRequestAuth(model.provider, options?.apiKey, options?.headers);
 
-	const base = buildBaseOptions(model, options, apiKey);
+	const base = buildBaseOptions(model, options, options?.apiKey);
 	if (!options?.reasoning) {
-		return streamAnthropic(model, context, { ...base, thinkingEnabled: false } satisfies AnthropicOptions);
+		return stream(model, context, { ...base, thinkingEnabled: false } satisfies AnthropicOptions);
 	}
 
 	// For models with adaptive thinking: use an effort level.
 	// For older models: use budget-based thinking.
 	if (model.compat?.forceAdaptiveThinking === true) {
 		const effort = mapThinkingLevelToEffort(model, options.reasoning);
-		return streamAnthropic(model, context, {
+		return stream(model, context, {
 			...base,
 			thinkingEnabled: true,
 			effort,
@@ -774,7 +788,7 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 		options.thinkingBudgets,
 	);
 
-	return streamAnthropic(model, context, {
+	return stream(model, context, {
 		...base,
 		maxTokens: adjusted.maxTokens,
 		thinkingEnabled: true,
@@ -788,10 +802,10 @@ function isOAuthToken(apiKey: string): boolean {
 
 function createClient(
 	model: Model<"anthropic-messages">,
-	apiKey: string,
+	apiKey: string | undefined,
 	interleavedThinking: boolean,
 	useFineGrainedToolStreamingBeta: boolean,
-	optionsHeaders?: Record<string, string>,
+	optionsHeaders?: ProviderHeaders,
 	dynamicHeaders?: Record<string, string>,
 	sessionId?: string,
 ): { client: Anthropic; isOAuthToken: boolean } {
@@ -805,34 +819,11 @@ function createClient(
 		betaFeatures.push(INTERLEAVED_THINKING_BETA);
 	}
 
-	if (model.provider === "cloudflare-ai-gateway") {
-		const client = new Anthropic({
-			apiKey: null,
-			authToken: null,
-			baseURL: resolveCloudflareBaseUrl(model),
-			dangerouslyAllowBrowser: true,
-			defaultHeaders: mergeHeaders(
-				{
-					accept: "application/json",
-					"anthropic-dangerous-direct-browser-access": "true",
-					"cf-aig-authorization": `Bearer ${apiKey}`,
-					"x-api-key": null,
-					Authorization: null,
-					...(betaFeatures.length > 0 ? { "anthropic-beta": betaFeatures.join(",") } : {}),
-				},
-				model.headers,
-				optionsHeaders,
-			),
-		});
-
-		return { client, isOAuthToken: false };
-	}
-
 	// Copilot: Bearer auth, selective betas.
 	if (model.provider === "github-copilot") {
 		const client = new Anthropic({
 			apiKey: null,
-			authToken: apiKey,
+			authToken: apiKey ?? null,
 			baseURL: model.baseUrl,
 			dangerouslyAllowBrowser: true,
 			defaultHeaders: mergeHeaders(
@@ -851,7 +842,7 @@ function createClient(
 	}
 
 	// OAuth: Bearer auth, Claude Code identity headers
-	if (isOAuthToken(apiKey)) {
+	if (apiKey && isOAuthToken(apiKey)) {
 		const client = new Anthropic({
 			apiKey: null,
 			authToken: apiKey,
@@ -873,24 +864,25 @@ function createClient(
 		return { client, isOAuthToken: true };
 	}
 
-	// API key auth
-	const sessionAffinityHeaders: Record<string, string | null> =
+	// API key or header-owned auth.
+	const sessionAffinityHeaders: ProviderHeaders =
 		sessionId && getAnthropicCompat(model).sendSessionAffinityHeaders ? { "x-session-affinity": sessionId } : {};
+	const defaultHeaders = mergeHeaders(
+		{
+			accept: "application/json",
+			"anthropic-dangerous-direct-browser-access": "true",
+			...(betaFeatures.length > 0 ? { "anthropic-beta": betaFeatures.join(",") } : {}),
+		},
+		sessionAffinityHeaders,
+		model.headers,
+		optionsHeaders,
+	);
 	const client = new Anthropic({
-		apiKey,
+		apiKey: apiKey ?? null,
 		authToken: null,
 		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,
-		defaultHeaders: mergeHeaders(
-			{
-				accept: "application/json",
-				"anthropic-dangerous-direct-browser-access": "true",
-				...(betaFeatures.length > 0 ? { "anthropic-beta": betaFeatures.join(",") } : {}),
-			},
-			sessionAffinityHeaders,
-			model.headers,
-			optionsHeaders,
-		),
+		defaultHeaders,
 	});
 
 	return { client, isOAuthToken: false };
@@ -902,7 +894,7 @@ function buildParams(
 	isOAuthToken: boolean,
 	options?: AnthropicOptions,
 ): MessageCreateParamsStreaming {
-	const { cacheControl } = getCacheControl(model, options?.cacheRetention);
+	const { cacheControl } = getCacheControl(model, options?.cacheRetention, options?.env);
 	const compat = getAnthropicCompat(model);
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,

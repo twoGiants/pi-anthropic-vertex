@@ -19,14 +19,19 @@
     ]
   },
   "scripts": {
-    "test": "node --test index.test.ts"
+    "test": "node --test index.test.ts",
+    "lint": "tsc --noEmit",
+    "ci": "npm run lint && npm run test"
   },
   "dependencies": {
     "@anthropic-ai/vertex-sdk": "~0.14.4"
   },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-ai": ">=0.80.0",
+    "@earendil-works/pi-coding-agent": ">=0.80.0"
   },
   "overrides": {
     "@anthropic-ai/sdk": "0.91.1"

@@ -35,7 +35,7 @@ Scripts for keeping the extension in sync with pi releases and managing versions
 ## Reference files
 
 - `PI_VERSION`: pinned pi version we last synced against
-- `anthropic.ts`: pinned copy of pi's anthropic provider source
+- `anthropic-messages.ts`: pinned copy of pi's anthropic-messages API source
 - `simple-options.ts`: pinned copy of pi's simple-options source
 - `compat.json`: extension-to-pi version compatibility data
 - `update-readme.js`: regenerates the README.md compatibility table from compat.json

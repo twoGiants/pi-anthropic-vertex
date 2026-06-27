@@ -4,7 +4,7 @@
  * Pi's built-in "anthropic-messages" provider handles all the hard parts: message
  * transformation, prompt caching, tool call normalization, thinking block replay,
  * partial JSON streaming, and usage tracking. We reuse this by injecting our own
- * AnthropicVertex client via the `client` option of streamAnthropic().
+ * AnthropicVertex client via the `client` option of stream().
  *
  * The API registry exposes two levels for each provider:
  *   - streamSimple(model, context, SimpleStreamOptions) is high-level. Resolves the
@@ -15,7 +15,7 @@
  *     and fully-mapped AnthropicOptions. This is what we call, injecting AnthropicVertex.
  *
  * By bypassing streamSimple, we must replicate the SimpleStreamOptions → AnthropicOptions
- * mapping it would have done. That mapping lives in streamSimpleAnthropic() and its helpers,
+ * mapping it would have done. That mapping lives in streamSimple() and its helpers,
  * which are internal to pi and not exported. We mirror them verbatim and keep them in sync
  * via the links in the comments below. Everything else (streaming, caching, error handling)
  * is handled by pi's stream() call.
@@ -34,13 +34,15 @@ import { AnthropicVertex, type ClientOptions } from "@anthropic-ai/vertex-sdk";
 import {
   getApiProvider,
   getModels,
+  type AnthropicMessagesCompat,
   type AnthropicOptions,
   type Api,
   type Model,
+  type ProviderHeaders,
   type SimpleStreamOptions,
   type ThinkingBudgets,
   type ThinkingLevel,
-} from "@earendil-works/pi-ai";
+} from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const project = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
@@ -98,7 +100,8 @@ export default function (pi: ExtensionAPI) {
       context,
       options?: SimpleStreamOptions,
     ) => {
-      const isAdaptive = model.compat?.forceAdaptiveThinking === true;
+      const modelCompat = model.compat as AnthropicMessagesCompat | undefined;
+      const isAdaptive = modelCompat?.forceAdaptiveThinking === true;
       const client = createVertexClient(isAdaptive, options?.headers);
       const anthropicOptions = mapStreamToAnthropicOptions(
         client,
@@ -116,7 +119,7 @@ export default function (pi: ExtensionAPI) {
 }
 
 /**
- * Build options for the built-in streamAnthropic.
+ * Build options for the built-in stream().
  */
 function mapStreamToAnthropicOptions(
   client: AnthropicVertex,
@@ -129,27 +132,32 @@ function mapStreamToAnthropicOptions(
     // AnthropicVertex extends BaseAnthropic, as Anthropic does, but it has no
     // completions or models endpoints. A direct cast is not possible. TypeScript
     // requires "unknown" as intermediate when types don't overlap. Currently safe
-    // because pi's internal streamAnthropic only calls "messages.stream()".
+    // because pi's internal stream() only calls "messages.stream()".
     client: client as unknown as Anthropic,
     maxTokens: baseMaxTokens,
     temperature: options?.temperature,
     signal: options?.signal,
     apiKey: options?.apiKey,
+    transport: options?.transport,
     cacheRetention: options?.cacheRetention,
     sessionId: options?.sessionId,
     headers: options?.headers,
     onPayload: options?.onPayload,
     onResponse: options?.onResponse,
+    timeoutMs: options?.timeoutMs,
+    websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs,
+    maxRetries: options?.maxRetries,
     maxRetryDelayMs: options?.maxRetryDelayMs,
     metadata: options?.metadata,
+    env: options?.env,
     ...buildThinkingOptions(baseMaxTokens, options, model),
   };
 }
-// We can't call streamSimpleAnthropic() because it creates its own Anthropic
+// We can't call streamSimple() because it creates its own Anthropic
 // client internally, ignoring our injected AnthropicVertex client. Instead we
-// call stream() directly and replicate the thinking mapping from streamSimpleAnthropic()
+// call stream() directly and replicate the thinking mapping from streamSimple()
 // here. Keep in sync with:
-// https://github.com/earendil-works/pi/blob/v0.75.5/packages/ai/src/providers/anthropic.ts#L732
+// https://github.com/earendil-works/pi/blob/v0.80.2/packages/ai/src/api/anthropic-messages.ts#L759
 function buildThinkingOptions(
   maxTokens: number | undefined,
   options: SimpleStreamOptions | undefined,
@@ -163,7 +171,8 @@ function buildThinkingOptions(
   if (!options?.reasoning || !model.reasoning)
     return { thinkingEnabled: false };
 
-  if (model.compat?.forceAdaptiveThinking === true)
+  const modelCompat = model.compat as AnthropicMessagesCompat | undefined;
+  if (modelCompat?.forceAdaptiveThinking === true)
     return {
       thinkingEnabled: true,
       effort: mapThinkingLevelToEffort(model, options.reasoning),
@@ -183,7 +192,7 @@ function buildThinkingOptions(
   };
 }
 
-// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.75.5/packages/ai/src/providers/anthropic.ts#L712
+// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.80.2/packages/ai/src/api/anthropic-messages.ts#L739
 function mapThinkingLevelToEffort(
   model: Model<Api>,
   level: SimpleStreamOptions["reasoning"],
@@ -204,7 +213,7 @@ function mapThinkingLevelToEffort(
   }
 }
 
-// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.75.5/packages/ai/src/providers/simple-options.ts#L26
+// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.80.2/packages/ai/src/api/simple-options.ts#L28
 function adjustMaxTokensForThinking(
   baseMaxTokens: number | undefined,
   modelMaxTokens: number,
@@ -247,7 +256,7 @@ type Profile = "adaptive" | "legacy";
 const sharedClient = new Map<Profile, AnthropicVertex>();
 function createVertexClient(
   isAdaptive: boolean,
-  requestHeaders?: Record<string, string>,
+  requestHeaders?: ProviderHeaders,
 ): AnthropicVertex {
   if (requestHeaders && Object.keys(requestHeaders).length > 0) {
     const opts = createVertexClientOpts(
@@ -274,13 +283,12 @@ export function createVertexClientOpts(
   projectId: string | undefined,
   region: string,
   isAdaptive: boolean,
-  requestHeaders?: Record<string, string>,
+  requestHeaders?: ProviderHeaders,
 ): ClientOptions {
   // Adaptive thinking models have interleaved thinking built in, so skip the
   // beta header.
   const betaHeaders: string[] = [];
-  if (!isAdaptive)
-    betaHeaders.push("interleaved-thinking-2025-05-14");
+  if (!isAdaptive) betaHeaders.push("interleaved-thinking-2025-05-14");
 
   // Merge any user-supplied beta values
   if (requestHeaders?.["anthropic-beta"])
