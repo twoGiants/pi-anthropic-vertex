@@ -49,7 +49,10 @@ OUTPUT=""
 DIFF_FILE="/tmp/pi-diff.md"
 
 # Global variables
-declare PINNED LATEST DOWNLOAD_DIR TRACKED_FILES_OVERRIDE
+PINNED="${PINNED:-}"
+LATEST="${LATEST:-}"
+DOWNLOAD_DIR=""
+TRACKED_FILES_OVERRIDE="${TRACKED_FILES_OVERRIDE:-}"
 
 main() {
   while [[ $# -gt 0 ]]; do
@@ -110,7 +113,7 @@ download_files() {
   local missing=false
 
   # for local testing
-  if [ -n "${TRACKED_FILES_OVERRIDE:-}" ]; then
+  if [ -n "$TRACKED_FILES_OVERRIDE" ]; then
     IFS=',' read -ra TRACKED_FILES <<< "$TRACKED_FILES_OVERRIDE"
   fi
 
