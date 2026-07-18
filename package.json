@@ -1,6 +1,6 @@
 {
   "name": "@twogiants/pi-anthropic-vertex",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Anthropic Claude models on Google Cloud Vertex AI for pi",
   "type": "module",
   "main": "index.ts",
@@ -30,8 +30,8 @@
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": ">=0.80.0",
-    "@earendil-works/pi-coding-agent": ">=0.80.0"
+    "@earendil-works/pi-ai": ">=0.80.7",
+    "@earendil-works/pi-coding-agent": ">=0.80.7"
   },
   "overrides": {
     "@anthropic-ai/sdk": "0.91.1"

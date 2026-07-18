@@ -1,4 +1,4 @@
-// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.80.3/packages/ai/src/api/simple-options.ts
+// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.80.10/packages/ai/src/api/simple-options.ts
 import type {
 	Api,
 	Context,
@@ -45,8 +45,8 @@ export function buildBaseOptions(
 	};
 }
 
-export function clampReasoning(effort: ThinkingLevel | undefined): Exclude<ThinkingLevel, "xhigh"> | undefined {
-	return effort === "xhigh" ? "high" : effort;
+export function clampReasoning(effort: ThinkingLevel | undefined): Exclude<ThinkingLevel, "xhigh" | "max"> | undefined {
+	return effort === "xhigh" || effort === "max" ? "high" : effort;
 }
 
 export function adjustMaxTokensForThinking(

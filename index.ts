@@ -148,7 +148,7 @@ function mapStreamToAnthropicOptions(
 // client internally, ignoring our injected AnthropicVertex client. Instead we
 // call stream() directly and replicate the thinking mapping from streamSimple()
 // here. Keep in sync with:
-// https://github.com/earendil-works/pi/blob/v0.80.3/packages/ai/src/api/anthropic-messages.ts#L767
+// https://github.com/earendil-works/pi/blob/v0.80.10/packages/ai/src/api/anthropic-messages.ts#L786
 function buildThinkingOptions(
   options: SimpleStreamOptions | undefined,
   model: Model<Api>,
@@ -188,7 +188,7 @@ function buildThinkingOptions(
   };
 }
 
-// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.80.3/packages/ai/src/api/anthropic-messages.ts#L747
+// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.80.10/packages/ai/src/api/anthropic-messages.ts#L766
 function mapThinkingLevelToEffort(
   model: Model<Api>,
   level: SimpleStreamOptions["reasoning"],
