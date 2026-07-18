@@ -37,13 +37,17 @@ import {
   type AnthropicMessagesCompat,
   type AnthropicOptions,
   type Api,
+  type Context,
   type Model,
   type ProviderHeaders,
   type SimpleStreamOptions,
-  type ThinkingBudgets,
-  type ThinkingLevel,
 } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  adjustMaxTokensForThinking,
+  buildBaseOptions,
+  clampMaxTokensToContext,
+} from "./simple-options.ts";
 
 const project = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
 const region =
@@ -107,6 +111,7 @@ export default function (pi: ExtensionAPI) {
         client,
         options,
         model,
+        context,
       );
       // The registry's wrapStream() guard rejects any model whose api field
       // doesn't match the registered api. Our models are registered as
@@ -125,8 +130,9 @@ function mapStreamToAnthropicOptions(
   client: AnthropicVertex,
   options: SimpleStreamOptions | undefined,
   model: Model<Api>,
+  context: Context,
 ): AnthropicOptions {
-  const baseMaxTokens = options?.maxTokens;
+  const base = buildBaseOptions(model, context, options, options?.apiKey);
 
   return {
     // AnthropicVertex extends BaseAnthropic, as Anthropic does, but it has no
@@ -134,34 +140,19 @@ function mapStreamToAnthropicOptions(
     // requires "unknown" as intermediate when types don't overlap. Currently safe
     // because pi's internal stream() only calls "messages.stream()".
     client: client as unknown as Anthropic,
-    maxTokens: baseMaxTokens,
-    temperature: options?.temperature,
-    signal: options?.signal,
-    apiKey: options?.apiKey,
-    transport: options?.transport,
-    cacheRetention: options?.cacheRetention,
-    sessionId: options?.sessionId,
-    headers: options?.headers,
-    onPayload: options?.onPayload,
-    onResponse: options?.onResponse,
-    timeoutMs: options?.timeoutMs,
-    websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs,
-    maxRetries: options?.maxRetries,
-    maxRetryDelayMs: options?.maxRetryDelayMs,
-    metadata: options?.metadata,
-    env: options?.env,
-    ...buildThinkingOptions(baseMaxTokens, options, model),
+    ...base,
+    ...buildThinkingOptions(options, model, context),
   };
 }
 // We can't call streamSimple() because it creates its own Anthropic
 // client internally, ignoring our injected AnthropicVertex client. Instead we
 // call stream() directly and replicate the thinking mapping from streamSimple()
 // here. Keep in sync with:
-// https://github.com/earendil-works/pi/blob/v0.80.2/packages/ai/src/api/anthropic-messages.ts#L759
+// https://github.com/earendil-works/pi/blob/v0.80.3/packages/ai/src/api/anthropic-messages.ts#L767
 function buildThinkingOptions(
-  maxTokens: number | undefined,
   options: SimpleStreamOptions | undefined,
   model: Model<Api>,
+  context: Context,
 ): {
   thinkingEnabled: boolean;
   effort?: AnthropicOptions["effort"];
@@ -179,20 +170,25 @@ function buildThinkingOptions(
     };
 
   const adjusted = adjustMaxTokensForThinking(
-    maxTokens,
+    options.maxTokens,
     model.maxTokens,
     options.reasoning,
     options.thinkingBudgets,
   );
 
+  const maxTokens = clampMaxTokensToContext(model, context, adjusted.maxTokens);
+
   return {
     thinkingEnabled: true,
-    maxTokens: adjusted.maxTokens,
-    thinkingBudgetTokens: adjusted.thinkingBudget,
+    maxTokens,
+    thinkingBudgetTokens: Math.min(
+      adjusted.thinkingBudget,
+      Math.max(0, maxTokens - 1024),
+    ),
   };
 }
 
-// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.80.2/packages/ai/src/api/anthropic-messages.ts#L739
+// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.80.3/packages/ai/src/api/anthropic-messages.ts#L747
 function mapThinkingLevelToEffort(
   model: Model<Api>,
   level: SimpleStreamOptions["reasoning"],
@@ -211,37 +207,6 @@ function mapThinkingLevelToEffort(
     default:
       return "high";
   }
-}
-
-// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.80.2/packages/ai/src/api/simple-options.ts#L28
-function adjustMaxTokensForThinking(
-  baseMaxTokens: number | undefined,
-  modelMaxTokens: number,
-  reasoningLevel: ThinkingLevel,
-  customBudgets?: ThinkingBudgets,
-): { maxTokens: number; thinkingBudget: number } {
-  const defaultBudgets: ThinkingBudgets = {
-    minimal: 1024,
-    low: 2048,
-    medium: 8192,
-    high: 16384,
-  };
-  const budgets = { ...defaultBudgets, ...customBudgets };
-  const minOutputTokens = 1024;
-  const level = (
-    reasoningLevel === "xhigh" ? "high" : reasoningLevel
-  ) as keyof ThinkingBudgets;
-  let thinkingBudget = budgets[level]!;
-  const maxTokens =
-    baseMaxTokens === undefined
-      ? modelMaxTokens
-      : Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
-
-  if (maxTokens <= thinkingBudget) {
-    thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
-  }
-
-  return { maxTokens, thinkingBudget };
 }
 
 /**

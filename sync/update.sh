@@ -7,12 +7,13 @@ set -euo pipefail
 
 VERSION="${1:-$(npm show @earendil-works/pi-coding-agent version)}"
 SYNC_DIR="$(cd "$(dirname "$0")" && pwd)"
-BASE_URL="https://raw.githubusercontent.com/earendil-works/pi/v${VERSION}/packages/ai/src/api"
+BASE_URL="https://raw.githubusercontent.com/earendil-works/pi/v${VERSION}/packages/ai/src"
 
 echo "Updating pinned references to pi $VERSION..."
 
-curl -sf "$BASE_URL/anthropic-messages.ts" -o "$SYNC_DIR/anthropic-messages.ts"
-curl -sf "$BASE_URL/simple-options.ts" -o "$SYNC_DIR/simple-options.ts"
+curl -sf "$BASE_URL/api/anthropic-messages.ts" -o "$SYNC_DIR/anthropic-messages.ts"
+curl -sf "$BASE_URL/api/simple-options.ts" -o "$SYNC_DIR/simple-options.ts"
+curl -sf "$BASE_URL/utils/estimate.ts" -o "$SYNC_DIR/estimate.ts"
 echo "$VERSION" > "$SYNC_DIR/PI_VERSION"
 
 # Update piMax in compat.json and regenerate README table.

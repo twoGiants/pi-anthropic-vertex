@@ -42,6 +42,7 @@ PI_RAW="https://raw.githubusercontent.com/earendil-works/pi"
 TRACKED_FILES=(
   "api/anthropic-messages.ts"
   "api/simple-options.ts"
+  "utils/estimate.ts"
 )
 
 # Global options

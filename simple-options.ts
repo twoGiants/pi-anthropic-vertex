@@ -1,3 +1,4 @@
+// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.80.3/packages/ai/src/api/simple-options.ts
 import type {
 	Api,
 	Context,
@@ -6,8 +7,8 @@ import type {
 	StreamOptions,
 	ThinkingBudgets,
 	ThinkingLevel,
-} from "../types.ts";
-import { estimateContextTokens } from "../utils/estimate.ts";
+} from "@earendil-works/pi-ai/compat";
+import { estimateContextTokens } from "./estimate.ts";
 
 const CONTEXT_SAFETY_TOKENS = 4096;
 const MIN_MAX_TOKENS = 1;
