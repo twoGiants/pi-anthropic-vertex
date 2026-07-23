@@ -76,6 +76,8 @@ export GOOGLE_CLOUD_PROJECT=your-project-id
 export GOOGLE_CLOUD_LOCATION=us-east5  # optional, defaults to us-east5
 ```
 
+The extension also recognizes `ANTHROPIC_VERTEX_PROJECT_ID` and `GOOGLE_CLOUD_PROJECT_ID` for project resolution, and `CLOUD_ML_REGION` for region. This allows it to work with existing Claude Code setups without additional configuration.
+
 ## Usage
 
 ```bash
