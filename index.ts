@@ -22,7 +22,7 @@
  *
  * Prerequisites:
  *   1. gcloud auth application-default login
- *   2. export GOOGLE_CLOUD_PROJECT=your-project-id
+ *   2. export GOOGLE_CLOUD_PROJECT=your-project-id  (or ANTHROPIC_VERTEX_PROJECT_ID)
  *   3. export GOOGLE_CLOUD_LOCATION=us-east5  (optional, defaults to us-east5)
  *
  * Usage:
@@ -49,16 +49,20 @@ import {
   clampMaxTokensToContext,
 } from "./simple-options.ts";
 
-const project = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+const project =
+  process.env.GOOGLE_CLOUD_PROJECT ||
+  process.env.GCLOUD_PROJECT ||
+  process.env.ANTHROPIC_VERTEX_PROJECT_ID ||
+  process.env.GOOGLE_CLOUD_PROJECT_ID;
 const region =
-  process.env.GOOGLE_CLOUD_LOCATION ||
   process.env.CLOUD_ML_REGION ||
+  process.env.GOOGLE_CLOUD_LOCATION ||
   "us-east5";
 
 export default function (pi: ExtensionAPI) {
   if (!project) {
     console.warn(
-      "[pi-anthropic-vertex] disabled: GOOGLE_CLOUD_PROJECT is not set",
+      "[pi-anthropic-vertex] disabled: set GOOGLE_CLOUD_PROJECT or ANTHROPIC_VERTEX_PROJECT_ID",
     );
     return;
   }
@@ -96,7 +100,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerProvider("anthropic-vertex", {
     baseUrl: `https://${region}-aiplatform.googleapis.com`,
-    apiKey: "$GOOGLE_CLOUD_PROJECT",
+    apiKey: project,
     api: "anthropic-vertex",
     models,
     streamSimple: (
