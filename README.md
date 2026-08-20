@@ -88,6 +88,24 @@ pi --provider anthropic-vertex --model claude-sonnet-4-6
 
 All Claude models available on Vertex AI are registered automatically.
 
+## PI WEB
+
+[PI WEB](https://pi-web.dev) runs its session daemon through a non-interactive login
+shell, which does not source `~/.zshrc` (or bash's `~/.bashrc`). Make sure
+`GOOGLE_CLOUD_PROJECT` (or `ANTHROPIC_VERTEX_PROJECT_ID`) and related env vars are set
+in a file your shell sources for non-interactive login shells too, such as `~/.zprofile`
+for zsh or `~/.bash_profile` for bash.
+
+To check what the session daemon actually sees, restart it and inspect the log:
+
+```bash
+systemctl --user restart pi-web-sessiond
+journalctl --user -u pi-web-sessiond -n 50 --no-pager | grep pi-anthropic-vertex
+```
+
+A `[pi-anthropic-vertex] disabled: set GOOGLE_CLOUD_PROJECT or ANTHROPIC_VERTEX_PROJECT_ID`
+line means the env vars weren't visible to that process.
+
 ## License
 
 MIT
