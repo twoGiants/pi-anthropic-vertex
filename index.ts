@@ -88,7 +88,7 @@ export default function (pi: ExtensionAPI) {
     }) => ({
       id,
       name,
-      compat,
+      compat: stripFallbacks(compat),
       reasoning,
       thinkingLevelMap,
       input,
@@ -125,6 +125,29 @@ export default function (pi: ExtensionAPI) {
       return anthropicApi.stream(patchedModel, context, anthropicOptions);
     },
   });
+}
+
+/**
+ * Drop `allowedFallbackModels` from a model's compat metadata.
+ *
+ * Pi turns `compat.allowedFallbackModels` into a `fallbacks` body param on the
+ * Anthropic Messages request (server-side refusal fallback, added in pi 0.84.3).
+ * Vertex does not implement that param and rejects the whole request with
+ * "fallbacks: Extra inputs are not permitted". Since we copy compat verbatim
+ * from pi's first-party Anthropic catalog, we have to strip the field here.
+ */
+export function stripFallbacks(
+  compat: Model<Api>["compat"],
+): Model<Api>["compat"] {
+  if (!compat || !("allowedFallbackModels" in compat)) return compat;
+  // Read structurally rather than through AnthropicMessagesCompat: the field
+  // only exists in the type from pi 0.84 on, and this package still builds
+  // against its declared peer floor.
+  const { allowedFallbackModels: _, ...rest } = compat as Record<
+    string,
+    unknown
+  >;
+  return rest as Model<Api>["compat"];
 }
 
 /**
