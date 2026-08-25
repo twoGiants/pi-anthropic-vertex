@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createVertexClientOpts } from "./index.ts";
+import type { Api, Model } from "@earendil-works/pi-ai/compat";
+import { createVertexClientOpts, stripFallbacks } from "./index.ts";
 
 describe("createVertexClientOpts", () => {
   it("sets interleaved-thinking header for non-adaptive model with no request headers", () => {
@@ -114,5 +115,32 @@ describe("createVertexClientOpts", () => {
     );
     assert.equal(opts.projectId, "my-project");
     assert.equal(opts.region, "europe-west1");
+  });
+});
+
+describe("stripFallbacks", () => {
+  it("removes allowedFallbackModels and keeps the other compat fields", () => {
+    // Shape of claude-opus-5 in pi's first-party Anthropic catalog.
+    const input = {
+      forceAdaptiveThinking: true,
+      supportsTemperature: false,
+      allowedFallbackModels: [
+        { provider: "anthropic", model: "claude-opus-4-8" },
+      ],
+    } as unknown as Model<Api>["compat"];
+
+    assert.deepEqual(stripFallbacks(input), {
+      forceAdaptiveThinking: true,
+      supportsTemperature: false,
+    });
+  });
+
+  it("leaves compat without allowedFallbackModels untouched", () => {
+    const compat = { forceAdaptiveThinking: true, supportsTemperature: false };
+    assert.deepEqual(stripFallbacks(compat), compat);
+  });
+
+  it("passes undefined compat through", () => {
+    assert.equal(stripFallbacks(undefined), undefined);
   });
 });
