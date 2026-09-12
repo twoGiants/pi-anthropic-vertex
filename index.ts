@@ -62,19 +62,6 @@ const region =
   process.env.GOOGLE_CLOUD_LOCATION ||
   "us-east5";
 
-// Client cache keyed by "project:region" so requests with different resolved
-// credentials (e.g. auth.json vs env var) each get their own client.
-const clients = new Map<string, AnthropicVertex>();
-function getOrCreateClient(projectId: string, region: string): AnthropicVertex {
-  const key = `${projectId}:${region}`;
-  let client = clients.get(key);
-  if (!client) {
-    client = new AnthropicVertex({ projectId, region });
-    clients.set(key, client);
-  }
-  return client;
-}
-
 export default function (pi: ExtensionAPI) {
   const anthropicApi = getApiProvider("anthropic-messages");
   if (!anthropicApi)
@@ -97,7 +84,7 @@ export default function (pi: ExtensionAPI) {
     }) => ({
       id,
       name,
-      compat,
+      compat: stripFallbacks(compat),
       reasoning,
       thinkingLevelMap,
       input,
@@ -142,6 +129,32 @@ export default function (pi: ExtensionAPI) {
       return anthropicApi.stream(patchedModel, context, anthropicOptions);
     },
   });
+}
+
+/**
+ * Vertex does not support the `fallbacks` request param that pi derives from
+ * `compat.allowedFallbackModels` (server-side refusal fallback, added in pi
+ * 0.84.3). Sending it produces a 400: "fallbacks: Extra inputs are not
+ * permitted". Strip the field so pi's buildParams() skips it.
+ */
+function stripFallbacks(compat: Model<Api>["compat"]): Model<Api>["compat"] {
+  if (!compat) return compat;
+  const { allowedFallbackModels: _, ...rest } =
+    compat as AnthropicMessagesCompat;
+  return rest;
+}
+
+// Client cache keyed by "project:region" so requests with different resolved
+// credentials (e.g. auth.json vs env var) each get their own client.
+const clients = new Map<string, AnthropicVertex>();
+function getOrCreateClient(projectId: string, region: string): AnthropicVertex {
+  const key = `${projectId}:${region}`;
+  let client = clients.get(key);
+  if (!client) {
+    client = new AnthropicVertex({ projectId, region });
+    clients.set(key, client);
+  }
+  return client;
 }
 
 /**

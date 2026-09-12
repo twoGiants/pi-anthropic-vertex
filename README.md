@@ -4,6 +4,9 @@
 
 Anthropic Claude models on Google Cloud Vertex AI for [pi](https://github.com/earendil-works/pi).
 
+> [!NOTE]
+> **Red Hat engineers:** if you rely on this extension and it's broken and you need an urgent fix, reach out to me on Red Hat Slack. If I can't respond quickly, fork the repo, fix it yourself, and open a PR, I'll get to it eventually. Code must be clean and well understood. Vibe-coded PRs will be closed immediately.
+
 > **Built-in support is coming.** There is an [open PR](https://github.com/earendil-works/pi/pull/5262)
 > to add a native `anthropic-vertex` provider to pi, which would make this
 > extension unnecessary. Multiple issues have requested this:
@@ -21,6 +24,7 @@ Anthropic Claude models on Google Cloud Vertex AI for [pi](https://github.com/ea
 <!-- compat:start -->
 | Extension | pi |
 |-----------|-----|
+| 0.1.16 | 0.85.1 |
 | 0.1.15 | 0.85.1 |
 | 0.1.14 | 0.85.1 |
 | 0.1.13 | 0.81.1 - 0.82.0 |
