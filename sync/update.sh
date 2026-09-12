@@ -21,5 +21,11 @@ echo "$VERSION" > "$SYNC_DIR/PI_VERSION"
 jq --arg v "$VERSION" '.[0].piMax = $v' "$SYNC_DIR/compat.json" > "$SYNC_DIR/compat.tmp" && mv "$SYNC_DIR/compat.tmp" "$SYNC_DIR/compat.json"
 node "$SYNC_DIR/update-readme.js"
 
+# Reinstall node_modules so peer dependencies resolve to the latest version.
+REPO_DIR="$(dirname "$SYNC_DIR")"
+cd "$REPO_DIR"
+rm -rf node_modules package-lock.json
+npm install --ignore-scripts
+
 echo "Done. Pinned to pi $VERSION."
 echo "Commit the changes to complete the update."

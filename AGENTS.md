@@ -7,8 +7,9 @@ Published as `@twogiants/pi-anthropic-vertex` on npm.
 
 The extension injects an `AnthropicVertex` client into pi's built-in
 `anthropic-messages` streaming provider. Pi handles all the hard parts (message
-transformation, prompt caching, tool streaming, thinking blocks, usage tracking).
-We only handle client construction, beta headers, and the thinking options mapping.
+transformation, prompt caching, tool streaming, thinking blocks, usage tracking,
+beta feature negotiation). We only handle client construction and the thinking
+options mapping.
 
 We call `getApiProvider("anthropic-messages").stream()` (the low-level API) because
 `streamSimple()` always creates its own Anthropic client, ignoring injected ones.

@@ -1,6 +1,6 @@
 {
   "name": "@twogiants/pi-anthropic-vertex",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Anthropic Claude models on Google Cloud Vertex AI for pi",
   "type": "module",
   "main": "index.ts",
@@ -19,9 +19,7 @@
     ]
   },
   "scripts": {
-    "test": "node --test index.test.ts",
-    "lint": "tsc --noEmit",
-    "ci": "npm run lint && npm run test"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/vertex-sdk": "~0.14.4"

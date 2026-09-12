@@ -21,6 +21,7 @@ Anthropic Claude models on Google Cloud Vertex AI for [pi](https://github.com/ea
 <!-- compat:start -->
 | Extension | pi |
 |-----------|-----|
+| 0.1.14 | 0.85.1 |
 | 0.1.13 | 0.81.1 - 0.82.0 |
 | 0.1.12 | 0.80.10 |
 | 0.1.11 | 0.80.3 |
@@ -44,9 +45,9 @@ Anthropic Claude models on Google Cloud Vertex AI for [pi](https://github.com/ea
 
 ## How it works
 
-This extension injects an `AnthropicVertex` client into pi's built-in `anthropic-messages` streaming implementation. All message transformation, prompt caching, tool call normalization, thinking block replay, partial JSON streaming, and usage tracking are handled by pi's battle-tested internals, nothing is reimplemented.
+This extension injects an `AnthropicVertex` client into pi's built-in `anthropic-messages` streaming implementation. All message transformation, prompt caching, tool call normalization, thinking block replay, partial JSON streaming, usage tracking, and beta feature negotiation are handled by pi's battle-tested internals, nothing is reimplemented.
 
-Other Vertex AI extensions ([pi-vertex-claude](https://github.com/isaacraja/pi-vertex-claude), [pi-vertex](https://github.com/ssweens/pi-packages/tree/main/pi-vertex), [pi-anthropic-vertex](https://github.com/basnijholt/pi-anthropic-vertex)) reimplement the Anthropic streaming protocol from scratch at 500–1500 lines, losing features like prompt caching, tool call adjacency enforcement, aborted message filtering, and partial JSON parsing. This extension delegates to pi's built-in at ~160 lines and inherits everything for free.
+Other Vertex AI extensions ([pi-vertex-claude](https://github.com/isaacraja/pi-vertex-claude), [pi-vertex](https://github.com/ssweens/pi-packages/tree/main/pi-vertex), [pi-anthropic-vertex](https://github.com/basnijholt/pi-anthropic-vertex)) reimplement the Anthropic streaming protocol from scratch at 500-1500 lines, losing features like prompt caching, tool call adjacency enforcement, aborted message filtering, and partial JSON parsing. This extension delegates to pi's built-in and inherits everything for free.
 
 Model definitions are pulled at runtime from pi's built-in Anthropic provider via `getModels("anthropic")`, so new Claude models are picked up automatically when pi updates.
 

@@ -69,9 +69,9 @@ jobs:
             echo "The following files that we mirror have changed. Review the diffs and check if our mirrored functions need updating:"
             echo ""
             echo "- \`estimate.ts\`: verbatim copy of pi's context token estimator"
-            echo "- \`simple-options.ts\`: verbatim copy of pi's \`buildBaseOptions\`, \`clampMaxTokensToContext\`, \`adjustMaxTokensForThinking\`"
+            echo "- \`simple-options.ts\`: verbatim copy of pi's \`buildBaseOptions\`, \`clampMaxTokensToContext\`, \`adjustMaxTokensForThinking\`, \`thinkingBudgetForLevel\`, \`clampThinkingBudgetToAnswerRoom\`"
             echo "- \`mapThinkingLevelToEffort\` in \`index.ts\`: maps pi thinking levels to Anthropic effort values"
-            echo "- Beta header logic in \`index.ts\`: which headers to send on the AnthropicVertex client"
+            echo "- \`buildThinkingOptions\` in \`index.ts\`: mirrors pi's streamSimple thinking logic"
             echo ""
             cat /tmp/pi-diff.md
             echo ""
