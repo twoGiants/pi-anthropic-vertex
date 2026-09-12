@@ -23,7 +23,10 @@
  *
  * Prerequisites:
  *   1. gcloud auth application-default login
- *   2. export GOOGLE_CLOUD_PROJECT=your-project-id  (or ANTHROPIC_VERTEX_PROJECT_ID)
+ *   2. Set your project via one of:
+ *      - export GOOGLE_CLOUD_PROJECT=your-project-id
+ *      - /login anthropic-vertex (enters project ID into auth.json)
+ *      - Configure auth.json directly (see pi providers.md)
  *   3. export GOOGLE_CLOUD_LOCATION=us-east5  (optional, defaults to us-east5)
  *
  * Usage:
@@ -59,14 +62,20 @@ const region =
   process.env.GOOGLE_CLOUD_LOCATION ||
   "us-east5";
 
-export default function (pi: ExtensionAPI) {
-  if (!project) {
-    console.warn(
-      "[pi-anthropic-vertex] disabled: set GOOGLE_CLOUD_PROJECT or ANTHROPIC_VERTEX_PROJECT_ID",
-    );
-    return;
+// Client cache keyed by "project:region" so requests with different resolved
+// credentials (e.g. auth.json vs env var) each get their own client.
+const clients = new Map<string, AnthropicVertex>();
+function getOrCreateClient(projectId: string, region: string): AnthropicVertex {
+  const key = `${projectId}:${region}`;
+  let client = clients.get(key);
+  if (!client) {
+    client = new AnthropicVertex({ projectId, region });
+    clients.set(key, client);
   }
+  return client;
+}
 
+export default function (pi: ExtensionAPI) {
   const anthropicApi = getApiProvider("anthropic-messages");
   if (!anthropicApi)
     throw new Error("Built-in anthropic-messages provider not found");
@@ -98,11 +107,12 @@ export default function (pi: ExtensionAPI) {
     }),
   );
 
-  const sharedClient = new AnthropicVertex({ projectId: project, region });
-
+  // Register with $ENV_VAR syntax so pi resolves the project through its auth
+  // pipeline (auth.json, /login, env vars). This lets PI WEB and other
+  // non-interactive environments work without shell profile env vars.
   pi.registerProvider("anthropic-vertex", {
     baseUrl: `https://${region}-aiplatform.googleapis.com`,
-    apiKey: project,
+    apiKey: project || "$GOOGLE_CLOUD_PROJECT",
     api: "anthropic-vertex",
     models,
     streamSimple: (
@@ -110,8 +120,16 @@ export default function (pi: ExtensionAPI) {
       context,
       options?: SimpleStreamOptions,
     ) => {
+      // Pi resolves the project ID through its auth pipeline and passes it as
+      // options.apiKey. Region may come from auth.json env overrides.
+      const effectiveProject = options?.apiKey || project;
+      const effectiveRegion =
+        options?.env?.CLOUD_ML_REGION ||
+        options?.env?.GOOGLE_CLOUD_LOCATION ||
+        region;
+      const client = getOrCreateClient(effectiveProject!, effectiveRegion);
       const anthropicOptions = mapStreamToAnthropicOptions(
-        sharedClient,
+        client,
         options,
         model,
         context,

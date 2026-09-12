@@ -21,6 +21,7 @@ Anthropic Claude models on Google Cloud Vertex AI for [pi](https://github.com/ea
 <!-- compat:start -->
 | Extension | pi |
 |-----------|-----|
+| 0.1.15 | 0.85.1 |
 | 0.1.14 | 0.85.1 |
 | 0.1.13 | 0.81.1 - 0.82.0 |
 | 0.1.12 | 0.80.10 |
@@ -71,14 +72,34 @@ Authenticate with Google Cloud:
 gcloud auth application-default login
 ```
 
-Set your project and region:
+Set your project using one of these methods:
+
+**Option 1: Environment variable**
 
 ```bash
 export GOOGLE_CLOUD_PROJECT=your-project-id
 export GOOGLE_CLOUD_LOCATION=us-east5  # optional, defaults to us-east5
 ```
 
-The extension also recognizes `ANTHROPIC_VERTEX_PROJECT_ID` and `GOOGLE_CLOUD_PROJECT_ID` for project resolution, and `CLOUD_ML_REGION` for region. This allows it to work with existing Claude Code setups without additional configuration.
+Also recognizes `ANTHROPIC_VERTEX_PROJECT_ID`, `GOOGLE_CLOUD_PROJECT_ID`, and `CLOUD_ML_REGION` for compatibility with existing Claude Code setups.
+
+**Option 2: Pi auth (recommended for PI WEB)**
+
+Use `/login anthropic-vertex` inside pi and enter your project ID, or configure `~/.pi/agent/auth.json` directly:
+
+```json
+{
+  "anthropic-vertex": {
+    "type": "api_key",
+    "key": "your-project-id",
+    "env": {
+      "GOOGLE_CLOUD_LOCATION": "us-east5"
+    }
+  }
+}
+```
+
+This works in non-interactive environments like PI WEB where shell profile env vars may not be available.
 
 ## Usage
 
