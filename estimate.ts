@@ -1,5 +1,5 @@
 // Keep in sync with: https://github.com/earendil-works/pi/blob/v0.80.10/packages/ai/src/utils/estimate.ts
-import type { AssistantMessage, Context, ImageContent, Message, TextContent, Tool, Usage } from "@earendil-works/pi-ai/compat";
+import type { AssistantMessage, ImageContent, Message, TextContent, TranscriptContext, Usage } from "@earendil-works/pi-ai/compat";
 
 export interface ContextUsageEstimate {
 	/** Estimated total context tokens. */
@@ -43,9 +43,29 @@ export function estimateTextAndImageContentTokens(content: string | Array<TextCo
 	return Math.ceil(estimateTextAndImageContentChars(content) / CHARS_PER_TOKEN);
 }
 
+function getSystemMessageText(message: Message & { role: "system" }): string {
+    const parts: string[] = [];
+    if (typeof message.content === "string") {
+        parts.push(message.content);
+    } else if (Array.isArray(message.content)) {
+        parts.push(message.content.filter(b => b.type === "text").map(b => b.text).join("\n"));
+    }
+    for (const text of Object.values(message.sections ?? {})) {
+        if (text !== null) parts.push(text as string);
+    }
+    return parts.filter(part => part.length > 0).join("\n\n");
+}
+
 export function estimateMessageTokens(message: Message): number {
 	let chars = 0;
 
+	if (message.role === "system") {
+		return (
+			estimateTextTokens(getSystemMessageText(message as any)) +
+			estimateToolsTokens((message as any).toolsAdded) +
+			estimateToolsTokens((message as any).toolsRemoved)
+		);
+	}
 	if (message.role === "user") return estimateTextAndImageContentTokens(message.content);
 	if (message.role === "toolResult") return estimateTextAndImageContentTokens(message.content);
 
@@ -55,7 +75,7 @@ export function estimateMessageTokens(message: Message): number {
 		} else if (block.type === "thinking") {
 			chars += block.thinking.length;
 		} else {
-			chars += block.name.length + safeJsonStringify(block.arguments).length;
+			chars += block.name.length + safeJsonStringify((block as any).arguments).length;
 		}
 	}
 	return Math.ceil(chars / CHARS_PER_TOKEN);
@@ -87,7 +107,8 @@ function getLastAssistantUsageInfo(messages: readonly Message[]): { usage: Usage
 	return usageInfo;
 }
 
-function estimateMessages(messages: readonly Message[]): ContextUsageEstimate {
+export function estimateContextTokens(context: TranscriptContext | readonly Message[]): ContextUsageEstimate {
+	const messages = "messages" in context ? context.messages : context;
 	const usageInfo = getLastAssistantUsageInfo(messages);
 	if (usageInfo) {
 		const usageTokens = calculateContextTokens(usageInfo.usage);
@@ -103,42 +124,7 @@ function estimateMessages(messages: readonly Message[]): ContextUsageEstimate {
 	return { tokens, usageTokens: 0, trailingTokens: tokens, lastUsageIndex: null };
 }
 
-function estimateToolsTokens(tools: readonly Tool[] | undefined): number {
+function estimateToolsTokens(tools: readonly unknown[] | undefined): number {
 	if (!tools || tools.length === 0) return 0;
 	return estimateTextTokens(safeJsonStringify(tools));
-}
-
-function isMessageArray(value: Context | readonly Message[]): value is readonly Message[] {
-	return Array.isArray(value);
-}
-
-export function estimateContextTokens(context: Context | readonly Message[]): ContextUsageEstimate {
-	if (isMessageArray(context)) return estimateMessages(context);
-
-	const estimate = estimateMessages(context.messages);
-	if (estimate.lastUsageIndex !== null) {
-		const addedNames = new Set(
-			context.messages
-				.slice(estimate.lastUsageIndex + 1)
-				.filter((message) => message.role === "toolResult")
-				.flatMap((message) => message.addedToolNames ?? []),
-		);
-		const addedToolTokens = estimateToolsTokens(context.tools?.filter((tool) => addedNames.has(tool.name)));
-		return {
-			tokens: estimate.tokens + addedToolTokens,
-			usageTokens: estimate.usageTokens,
-			trailingTokens: estimate.trailingTokens + addedToolTokens,
-			lastUsageIndex: estimate.lastUsageIndex,
-		};
-	}
-
-	const prefixTokens =
-		(context.systemPrompt ? estimateTextTokens(context.systemPrompt) : 0) + estimateToolsTokens(context.tools);
-
-	return {
-		tokens: estimate.tokens + prefixTokens,
-		usageTokens: estimate.usageTokens,
-		trailingTokens: estimate.trailingTokens + prefixTokens,
-		lastUsageIndex: estimate.lastUsageIndex,
-	};
 }

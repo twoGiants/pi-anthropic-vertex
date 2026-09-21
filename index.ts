@@ -40,7 +40,7 @@ import {
   type AnthropicMessagesCompat,
   type AnthropicOptions,
   type Api,
-  type Context,
+  type TranscriptContext,
   type Model,
   type SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
@@ -164,7 +164,7 @@ function mapStreamToAnthropicOptions(
   client: AnthropicVertex,
   options: SimpleStreamOptions | undefined,
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
 ): AnthropicOptions {
   const base = {
     ...buildBaseOptions(model, context, options, options?.apiKey),
@@ -189,7 +189,7 @@ function mapStreamToAnthropicOptions(
 function buildThinkingOptions(
   options: SimpleStreamOptions | undefined,
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
 ): {
   thinkingEnabled: boolean;
   effort?: AnthropicOptions["effort"];
