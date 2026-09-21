@@ -84,7 +84,7 @@ export default function (pi: ExtensionAPI) {
     }) => ({
       id,
       name,
-      compat: stripFallbacks(compat),
+      compat: stripUnsupportedVertexFeatures(compat),
       reasoning,
       thinkingLevelMap,
       input,
@@ -137,9 +137,9 @@ export default function (pi: ExtensionAPI) {
  * 0.84.3). Sending it produces a 400: "fallbacks: Extra inputs are not
  * permitted". Strip the field so pi's buildParams() skips it.
  */
-function stripFallbacks(compat: Model<Api>["compat"]): Model<Api>["compat"] {
+function stripUnsupportedVertexFeatures(compat: Model<Api>["compat"]): Model<Api>["compat"] {
   if (!compat) return compat;
-  const { allowedFallbackModels: _, ...rest } =
+  const { allowedFallbackModels: _fallbacks, supportsStrictTools: _strict, ...rest } =
     compat as AnthropicMessagesCompat;
   return rest;
 }
