@@ -1,19 +1,19 @@
-// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.85.1/packages/ai/src/api/simple-options.ts
+// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.86.1/packages/ai/src/api/simple-options.ts
 import type {
 	Api,
-	Context,
 	Model,
 	SimpleStreamOptions,
 	StreamOptions,
 	ThinkingBudgets,
 	ThinkingLevel,
+	TranscriptContext,
 } from "@earendil-works/pi-ai/compat";
 import { estimateContextTokens } from "./estimate.ts";
 
 const CONTEXT_SAFETY_TOKENS = 4096;
 const MIN_MAX_TOKENS = 1;
 
-export function clampMaxTokensToContext(model: Model<Api>, context: Context, maxTokens: number): number {
+export function clampMaxTokensToContext(model: Model<Api>, context: TranscriptContext, maxTokens: number): number {
 	if (model.contextWindow <= 0) return Math.max(MIN_MAX_TOKENS, maxTokens);
 	const available = model.contextWindow - estimateContextTokens(context).tokens - CONTEXT_SAFETY_TOKENS;
 	return Math.min(maxTokens, Math.max(MIN_MAX_TOKENS, available));
@@ -21,7 +21,7 @@ export function clampMaxTokensToContext(model: Model<Api>, context: Context, max
 
 export function buildBaseOptions(
 	model: Model<Api>,
-	context: Context,
+	context: TranscriptContext,
 	options?: SimpleStreamOptions,
 	apiKey?: string,
 ): StreamOptions {

@@ -24,7 +24,8 @@ Anthropic Claude models on Google Cloud Vertex AI for [pi](https://github.com/ea
 <!-- compat:start -->
 | Extension | pi |
 |-----------|-----|
-| 0.1.16 | 0.85.1 |
+| 0.1.17 | 0.86.1 |
+| 0.1.16 | 0.85.1 - 0.86.1 |
 | 0.1.15 | 0.85.1 |
 | 0.1.14 | 0.85.1 |
 | 0.1.13 | 0.81.1 - 0.82.0 |
@@ -113,6 +114,11 @@ pi --provider anthropic-vertex --model claude-sonnet-4-6
 ```
 
 All Claude models available on Vertex AI are registered automatically.
+
+## Contributing
+
+This extension mirrors internal pi functions and must stay in sync with pi
+releases. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full PR checklist.
 
 ## License
 
