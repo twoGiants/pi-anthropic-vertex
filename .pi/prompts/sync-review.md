@@ -31,6 +31,14 @@ Present your analysis and proposed changes, then wait for approval.
 After approval, make the changes to `index.ts`, `index.test.ts`, and the
 "keep in sync" link versions and line numbers. Run the tests to verify.
 
+Also check if the changes require updates to any of these docs:
+
+- `CONTRIBUTING.md`: mirrored files table, checklist, or update instructions
+- `AGENTS.md`: architecture description or key files list
+- `README.md`: "How it works" section
+- `index.ts` top comment: architecture overview or prerequisites
+- `.github/pull_request_template.md`: PR checklist items
+
 Then show the full `git diff` and **stop and wait for the user to review**
 before proceeding.
 

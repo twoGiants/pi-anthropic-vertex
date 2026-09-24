@@ -40,7 +40,7 @@ import {
   type AnthropicMessagesCompat,
   type AnthropicOptions,
   type Api,
-  type Context,
+  type TranscriptContext,
   type Model,
   type SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
@@ -84,7 +84,7 @@ export default function (pi: ExtensionAPI) {
     }) => ({
       id,
       name,
-      compat: stripFallbacks(compat),
+      compat: stripUnsupportedVertexFeatures(compat),
       reasoning,
       thinkingLevelMap,
       input,
@@ -132,14 +132,14 @@ export default function (pi: ExtensionAPI) {
 }
 
 /**
- * Vertex does not support the `fallbacks` request param that pi derives from
- * `compat.allowedFallbackModels` (server-side refusal fallback, added in pi
- * 0.84.3). Sending it produces a 400: "fallbacks: Extra inputs are not
- * permitted". Strip the field so pi's buildParams() skips it.
+ * Strip compat fields that Vertex AI does not support:
+ * - `allowedFallbackModels`: Vertex rejects the `fallbacks` request param
+ *   with "fallbacks: Extra inputs are not permitted" (pi 0.84.3+).
+ * - `supportsStrictTools`: Vertex rejects `strict: true` on tool definitions.
  */
-function stripFallbacks(compat: Model<Api>["compat"]): Model<Api>["compat"] {
+function stripUnsupportedVertexFeatures(compat: Model<Api>["compat"]): Model<Api>["compat"] {
   if (!compat) return compat;
-  const { allowedFallbackModels: _, ...rest } =
+  const { allowedFallbackModels: _fallbacks, supportsStrictTools: _strict, ...rest } =
     compat as AnthropicMessagesCompat;
   return rest;
 }
@@ -164,7 +164,7 @@ function mapStreamToAnthropicOptions(
   client: AnthropicVertex,
   options: SimpleStreamOptions | undefined,
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
 ): AnthropicOptions {
   const base = {
     ...buildBaseOptions(model, context, options, options?.apiKey),
@@ -185,11 +185,11 @@ function mapStreamToAnthropicOptions(
 // client internally, ignoring our injected AnthropicVertex client. Instead we
 // call stream() directly and replicate the thinking mapping from streamSimple()
 // here. Keep in sync with:
-// https://github.com/earendil-works/pi/blob/v0.85.1/packages/ai/src/api/anthropic-messages.ts#L849
+// https://github.com/earendil-works/pi/blob/v0.86.1/packages/ai/src/api/anthropic-messages.ts#L858
 function buildThinkingOptions(
   options: SimpleStreamOptions | undefined,
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
 ): {
   thinkingEnabled: boolean;
   effort?: AnthropicOptions["effort"];
@@ -225,7 +225,7 @@ function buildThinkingOptions(
   };
 }
 
-// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.85.1/packages/ai/src/api/anthropic-messages.ts#L829
+// Keep in sync with: https://github.com/earendil-works/pi/blob/v0.86.1/packages/ai/src/api/anthropic-messages.ts#L838
 function mapThinkingLevelToEffort(
   model: Model<Api>,
   level: SimpleStreamOptions["reasoning"],
