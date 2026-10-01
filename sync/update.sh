@@ -16,6 +16,9 @@ curl -sf "$BASE_URL/api/simple-options.ts" -o "$SYNC_DIR/simple-options.ts"
 curl -sf "$BASE_URL/utils/estimate.ts" -o "$SYNC_DIR/estimate.ts"
 echo "$VERSION" > "$SYNC_DIR/PI_VERSION"
 
+# Copy pinned sources to project root with adjusted imports.
+"$SYNC_DIR/copy-sources.sh" "$VERSION"
+
 # Update piMax in compat.json and regenerate README table.
 # jq can't read and write the same file, so we write to a temp file first.
 jq --arg v "$VERSION" '.[0].piMax = $v' "$SYNC_DIR/compat.json" > "$SYNC_DIR/compat.tmp" && mv "$SYNC_DIR/compat.tmp" "$SYNC_DIR/compat.json"

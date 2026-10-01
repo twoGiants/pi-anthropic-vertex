@@ -38,15 +38,12 @@ exact pi version and line number it was last synced against.
 
 ## How to update mirrored files
 
-1. Run `./sync/update.sh <pi-version>` to fetch new pi source into `sync/`.
-2. Diff the new `sync/estimate.ts` against `estimate.ts` (same for
-   `simple-options.ts`). The only differences should be the import paths.
-3. Copy the new pi source into the root file, then change the imports from
-   relative paths to `@earendil-works/pi-ai/compat`.
-4. If the pi source added a new import (like a utility function), check if
-   it is available from `@earendil-works/pi-ai/compat`. If it is, import it
-   from there.
-5. Update the "Keep in sync" comment at the top of the file.
+1. Run `./sync/update.sh <pi-version>`. This fetches new pi source into
+   `sync/`, then runs `copy-sources.sh` to copy the verbatim files into the
+   project root with adjusted imports and updated "Keep in sync" comments.
+2. If pi added a new import path, add the mapping to `sync/copy-sources.sh`.
+3. Manually update the "Keep in sync" links in `index.ts` (line numbers
+   for `buildThinkingOptions` and `mapThinkingLevelToEffort`).
 
 ## PR checklist
 

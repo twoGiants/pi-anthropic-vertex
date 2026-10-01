@@ -28,8 +28,9 @@ This updates pinned references, commits, pushes, and closes the issue.
 
 Present your analysis and proposed changes, then wait for approval.
 
-After approval, make the changes to `index.ts`, `index.test.ts`, and the
-"keep in sync" link versions and line numbers. Run the tests to verify.
+After approval, update `index.ts` "keep in sync" link versions and line numbers.
+The verbatim copies (`simple-options.ts`, `estimate.ts`) are updated automatically
+by `release.sh` via `update.sh` -> `copy-sources.sh`. Verify with `npm run lint`.
 
 Also check if the changes require updates to any of these docs:
 
