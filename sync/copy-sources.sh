@@ -10,7 +10,7 @@ set -euo pipefail
 #
 # Import mapping (pi source -> our code):
 #   "../types.ts"          -> "@earendil-works/pi-ai/compat"
-#   "../models.ts"         -> "@earendil-works/pi-ai/models"
+#   "../models.ts"         -> "@earendil-works/pi-ai/compat"
 #   "../utils/estimate.ts" -> "./estimate.ts"
 #   "./text.ts"            -> "@earendil-works/pi-ai/compat"
 
@@ -27,7 +27,7 @@ copy_with_imports() {
     printf '// Keep in sync with: %s\n' "$sync_url"
     sed \
       -e "s|from \"../types.ts\"|from \"@earendil-works/pi-ai/compat\"|g" \
-      -e "s|from \"../models.ts\"|from \"@earendil-works/pi-ai/models\"|g" \
+      -e "s|from \"../models.ts\"|from \"@earendil-works/pi-ai/compat\"|g" \
       -e "s|from \"../utils/estimate.ts\"|from \"./estimate.ts\"|g" \
       -e "s|from \"./text.ts\"|from \"@earendil-works/pi-ai/compat\"|g" \
       "$src"

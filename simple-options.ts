@@ -1,5 +1,5 @@
 // Keep in sync with: https://github.com/earendil-works/pi/blob/v1.3.0/packages/ai/src/api/simple-options.ts
-import { clampThinkingLevel } from "@earendil-works/pi-ai/models";
+import { clampThinkingLevel } from "@earendil-works/pi-ai/compat";
 import type {
 	Api,
 	Model,
