@@ -1,4 +1,4 @@
-// Keep in sync with: https://github.com/earendil-works/pi/blob/v1.3.0/packages/ai/src/utils/estimate.ts
+// Keep in sync with: https://github.com/earendil-works/pi/blob/v1.4.0/packages/ai/src/utils/estimate.ts
 import type { AssistantMessage, ImageContent, Message, TextContent, TranscriptContext, Usage } from "@earendil-works/pi-ai/compat";
 import { getSystemMessageText } from "@earendil-works/pi-ai/compat";
 

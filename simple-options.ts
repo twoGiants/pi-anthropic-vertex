@@ -1,4 +1,4 @@
-// Keep in sync with: https://github.com/earendil-works/pi/blob/v1.3.0/packages/ai/src/api/simple-options.ts
+// Keep in sync with: https://github.com/earendil-works/pi/blob/v1.4.0/packages/ai/src/api/simple-options.ts
 import { clampThinkingLevel } from "@earendil-works/pi-ai/models";
 import type {
 	Api,
@@ -46,13 +46,14 @@ export function buildBaseOptions(
 		samplingParams,
 		maxTokens: clampMaxTokensToContext(model, context, options?.maxTokens ?? model.maxTokens),
 		signal: options?.signal,
-		telemetryContext: options?.telemetryContext,
+		telemetry: options?.telemetry,
 		apiKey: apiKey || options?.apiKey,
 		fetch: options?.fetch,
 		transport: options?.transport,
 		cacheRetention: options?.cacheRetention,
 		sessionId: options?.sessionId,
 		headers: options?.headers,
+		identity: options?.identity,
 		onPayload: options?.onPayload,
 		onResponse: options?.onResponse,
 		onProviderStreamEvent: options?.onProviderStreamEvent,
