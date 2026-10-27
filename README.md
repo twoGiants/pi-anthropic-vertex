@@ -24,6 +24,7 @@ Anthropic Claude models on Google Cloud Vertex AI for [pi](https://github.com/ea
 <!-- compat:start -->
 | Extension | pi |
 |-----------|-----|
+| 0.1.21 | 1.4.0 |
 | 0.1.20 | 1.4.0 |
 | 0.1.19 | 1.3.0 |
 | 0.1.18 | 0.99.1 - 0.99.2 |
