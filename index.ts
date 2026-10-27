@@ -81,6 +81,8 @@ export default function (pi: ExtensionAPI) {
       cost,
       contextWindow,
       maxTokens,
+      promptCache,
+      inputLimits,
       samplingParams,
       samplingParamsByThinkingLevel,
     }) => ({
@@ -93,6 +95,8 @@ export default function (pi: ExtensionAPI) {
       cost,
       contextWindow,
       maxTokens,
+      promptCache,
+      inputLimits,
       samplingParams,
       samplingParamsByThinkingLevel,
     }),
